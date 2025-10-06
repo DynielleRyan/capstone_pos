@@ -1,0 +1,35 @@
+{
+  "name": "jambo-pharmacy-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Jambo's Pharmacy PoS System",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "nodemon --exec tsx src/server.js",
+    "build": "tsx",
+    "start": "node dist/server.js",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "pos",
+    "pharmacy",
+    "express",
+    "typescript"
+  ],
+  "author": "Jambo's Pharmacy",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.74.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/node": "^20.19.19",
+    "nodemon": "^3.1.10",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  }
+}
