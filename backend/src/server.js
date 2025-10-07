@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import  { supabase } from './utils/database'
-
-dotenv.config(); //loads the env file globally 
+import 'dotenv/config'; //to be continued
+import  { supabase } from './utils/database';
+import productRoutes from './routes/products';
+// dotenv.config(); //loads the env file globally 
 
 const app = express(); 
 const PORT = process.env.PORT || 5002;
@@ -15,6 +15,9 @@ app.use(cors({
 
 app.use(express.json());
 
+//Routes
+app.use('/api/products', productRoutes);
+
 app.get('/api/health', (req, res) => {
     res.json({
         message: 'API is running',
@@ -25,7 +28,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/test-db', async (req, res) => {
     try {
-        const {data, error} = await supabase.from('products').select('*').limit(1);
+        const {data, error} = await supabase.from('Product').select('*').limit(1);
         if (error) {
             throw error
         };
