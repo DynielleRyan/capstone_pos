@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import 'dotenv/config'; //to be continued
+import 'dotenv/config'; //global import for all files 
 import  { supabase } from './utils/database';
 import productRoutes from './routes/products';
+import authRoutes from './routes/auth';
 // dotenv.config(); //loads the env file globally 
 
 const app = express(); 
@@ -17,6 +18,7 @@ app.use(express.json());
 
 //Routes
 app.use('/api/products', productRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({
