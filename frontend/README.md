@@ -1,73 +1,101 @@
-# React + TypeScript + Vite
+# Pharmacy Point of Sale - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React frontend for the Pharmacy Point of Sale system built with Vite, TypeScript, Tailwind CSS, and DaisyUI.
 
-Currently, two official plugins are available:
+## 🚀 Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React 19** - UI library
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **Tailwind CSS 3.4.1** - Utility-first CSS framework
+- **DaisyUI 4.12.10** - Component library
+- **React Router DOM** - Client-side routing
+- **Supabase** - Authentication and database
+- **Axios** - HTTP client
+- **Lucide React** - Icon library
 
-## React Compiler
+## 📦 Installation
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🔧 Configuration
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+1. Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
 ```
+
+2. Update the environment variables in `.env`:
+```env
+VITE_SUPABASE_URL=your_supabase_url_here
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+VITE_API_URL=http://localhost:3000
+```
+
+## 🏃 Running the Development Server
+
+```bash
+npm run dev
+```
+
+The app will be available at `http://localhost:5173`
+
+## 🏗️ Build for Production
+
+```bash
+npm run build
+```
+
+## 👁️ Preview Production Build
+
+```bash
+npm run preview
+```
+
+## 📁 Project Structure
+
+```
+frontend/
+├── src/
+│   ├── components/      # Reusable UI components
+│   ├── pages/          # Page components (LoginPage, Dashboard, etc.)
+│   ├── services/       # API and Supabase services
+│   ├── utils/          # Utility functions and constants
+│   ├── hooks/          # Custom React hooks
+│   ├── App.tsx         # Main app component with routing
+│   ├── main.tsx        # App entry point
+│   └── index.css       # Global styles
+├── public/             # Static assets
+├── .env.example        # Environment variables template
+└── package.json        # Dependencies and scripts
+```
+
+## 🎨 DaisyUI Themes
+
+You can change the theme by modifying the `data-theme` attribute in `index.html`:
+
+Available themes: `light`, `dark`, `cupcake`, `corporate`, `forest`
+
+```html
+<html lang="en" data-theme="light">
+```
+
+## 📝 Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+
+## 🔐 Authentication
+
+The app uses Supabase for authentication. The auth service is located in `src/services/supabase.ts`.
+
+## 🌐 API Integration
+
+Backend API integration is configured in `src/services/api.ts` with Axios interceptors for:
+- Automatic token injection
+- Global error handling
+- 401 unauthorized redirects

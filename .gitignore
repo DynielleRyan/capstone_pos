@@ -1,4 +1,7 @@
 database/
 .env 
 node_modules/
+.vite/
 
+/frontend/node_modules/
+/backend/node_modules/
