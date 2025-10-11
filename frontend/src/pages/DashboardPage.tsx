@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { 
   Grid3X3, 
   Clock, 
@@ -12,9 +13,65 @@ import CategoryCard from '../components/CategoryCard';
 import ProductCard from '../components/ProductCard';
 import OrderItem from '../components/OrderItem';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
+
+
+interface Product {
+  ProductID: string,
+  Name: string,
+  GenericName: string,
+  Category: string,
+  Brand: string,
+  SellingPrice: number,
+  isVATExempted: boolean,
+  VATAmount: number,
+  PrescriptionYN: boolean;
+  Image?: string,
+
+}
+
+interface CartItem {
+  id: string,
+  name: string,
+  description: string,
+  price: number,
+  quantity: number,
+  discount?: string[],
+
+}
 
 const DashboardPage = () => {
   const { signOut } = useAuth();
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error,setError] = useState('');
+
+
+  //fetch products from api 
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try { 
+        setLoading(true);
+        const response = await api.get('/products'); 
+        console.log('Products fetched', response.data);
+        setProducts(response.data);
+        setError('');
+      } catch (error) {
+        console.log('Error fetching products: ', error);
+        setError('Failed to load products');
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    fetchProducts();
+  }, []);
+
+  const addToCart = (product: Product) => {
+    const existingItem =cartItems.find( item => item.id === product.ProductID);
+  }
 
   const handleLogout = async () => {
     try {
@@ -24,6 +81,7 @@ const DashboardPage = () => {
       console.error('Logout failed:', error);
     }
   };
+  
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">

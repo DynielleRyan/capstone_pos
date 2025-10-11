@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+// Remove RegisterPage import - no longer needed
 
 // Protected Route component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
