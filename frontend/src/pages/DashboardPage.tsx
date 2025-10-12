@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'; // Add useEffect
 import { 
   Grid3X3, 
   Clock, 
@@ -13,95 +13,146 @@ import CategoryCard from '../components/CategoryCard';
 import ProductCard from '../components/ProductCard';
 import OrderItem from '../components/OrderItem';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api';
+import api from '../services/api'; // Add this import
 
-
+// Add interface for Product from database
 interface Product {
-  ProductID: string,
-  Name: string,
-  GenericName: string,
-  Category: string,
-  Brand: string,
-  SellingPrice: number,
-  isVATExempted: boolean,
-  VATAmount: number,
+  ProductID: string;
+  Name: string;
+  GenericName: string;
+  Category: string;
+  Brand: string;
+  SellingPrice: number;
+  IsVATExemptYN: boolean;
   PrescriptionYN: boolean;
-  Image?: string,
-
+  Image?: string;
 }
 
+// Add interface for CartItem
 interface CartItem {
-  id: string,
-  name: string,
-  description: string,
-  price: number,
-  quantity: number,
-  discount?: string[],
-
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  quantity: number;
+  discounts?: string[];
 }
 
 const DashboardPage = () => {
   const { signOut } = useAuth();
-
+  
+  // Add state for products and cart
   const [products, setProducts] = useState<Product[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error,setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-
-  //fetch products from api 
+  // Fetch products from API
   useEffect(() => {
     const fetchProducts = async () => {
-      try { 
+      try {
         setLoading(true);
-        const response = await api.get('/products'); 
-        console.log('Products fetched', response.data);
+        const response = await api.get('/products');
+        console.log('Products fetched:', response.data); // Debug log
         setProducts(response.data);
         setError('');
-      } catch (error) {
-        console.log('Error fetching products: ', error);
+      } catch (err) {
+        console.error('Error fetching products:', err);
         setError('Failed to load products');
+        // Keep products array empty if API fails
+        setProducts([]);
       } finally {
         setLoading(false);
       }
     };
-  
+
     fetchProducts();
   }, []);
 
+  // Add function to add item to cart
   const addToCart = (product: Product) => {
-    const existingItem =cartItems.find( item => item.id === product.ProductID);
-  }
+    const existingItem = cartItems.find(item => item.name === product.Name);
+    
+    if (existingItem) {
+      setCartItems(prev => 
+        prev.map(item => 
+          item.name === product.Name 
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      );
+    } else {
+      const newItem: CartItem = {
+        id: product.ProductID,
+        name: product.Name,
+        description: product.GenericName || product.Name,
+        price: product.SellingPrice,
+        quantity: 1,
+        discounts: ["Senior/PWD Discount", "VAT Exemption"]
+      };
+      setCartItems(prev => [...prev, newItem]);
+    }
+  };
+
+  // Add function to update quantity
+  const updateQuantity = (id: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      setCartItems(prev => prev.filter(item => item.id !== id));
+    } else {
+      setCartItems(prev => 
+        prev.map(item => 
+          item.id === id ? { ...item, quantity: newQuantity } : item
+        )
+      );
+    }
+  };
+
+  // Add function to clear cart
+  const clearCart = () => {
+    setCartItems([]);
+  };
+
+  // Add calculation functions
+  const calculateSubtotal = () => {
+    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+  };
+
+  const calculateDiscount = () => {
+    return cartItems.reduce((total, item) => total + (item.price * item.quantity * 0.2), 0);
+  };
+
+  const calculateTotal = () => {
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    const vat = (subtotal - discount) * 0.12;
+    return subtotal - discount + vat;
+  };
 
   const handleLogout = async () => {
     try {
       await signOut();
-      // The AuthContext will automatically redirect to login via the ProtectedRoute
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
-  
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      {/* Left Sidebar */}
+      {/* Left Sidebar - same as before */}
       <div className="w-full lg:w-80 bg-white shadow-lg flex flex-col lg:flex-col">
         {/* Logo */}
         <div className="p-6 border-b text-center">
           <h1 className="text-2xl font-bold text-blue-600">Jambo's Pharmacy</h1>
         </div>
 
-        {/* Navigation */}
+        {/* Navigation - same as before */}
         <div className="flex-1 p-4">
           <div className="flex lg:flex-col space-x-4 lg:space-x-0 lg:space-y-2">
-            {/* Dashboard - Active */}
             <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg flex-1 lg:flex-none justify-center lg:justify-start">
               <Grid3X3 className="w-5 h-5 text-blue-600" />
               <span className="text-blue-600 font-medium">Dashboard</span>
             </div>
             
-            {/* History */}
             <div className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer flex-1 lg:flex-none justify-center lg:justify-start">
               <Clock className="w-5 h-5 text-blue-600" />
               <span className="text-gray-700">History</span>
@@ -109,7 +160,7 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* Logout */}
+        {/* Logout - same as before */}
         <div className="p-4 border-t">
           <div 
             className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
@@ -122,11 +173,10 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content Area - same as before */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar */}
+        {/* Top Bar - same as before */}
         <div className="bg-white shadow-sm p-4 flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
-          {/* Search Bar */}
           <div className="relative w-full sm:w-auto">
             <input
               type="text"
@@ -136,7 +186,6 @@ const DashboardPage = () => {
             <Search className="absolute right-3 top-2.5 w-5 h-5 text-gray-400" />
           </div>
 
-          {/* User Profile */}
           <div className="flex items-center space-x-3">
             <span className="text-gray-700 font-medium hidden sm:block">Jemsey Amonsot</span>
             <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
@@ -145,11 +194,10 @@ const DashboardPage = () => {
 
         {/* Content */}
         <div className="flex-1 p-3 sm:p-6">
-          {/* Categories Section */}
+          {/* Categories Section - same as before */}
           <div className="mb-6 sm:mb-8">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">Category</h2>
             <div className="flex space-x-3 sm:space-x-4 overflow-x-auto pb-2">
-              {/* Category Cards */}
               {[
                 { name: "Vitamins", icon: <div className="w-6 h-6 bg-blue-600 rounded"></div> },
                 { name: "Food", icon: <div className="w-6 h-6 bg-blue-600 rounded"></div> },
@@ -185,31 +233,44 @@ const DashboardPage = () => {
               </div>
             </div>
 
-            {/* Product Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
-              {/* Product Cards */}
-              {[
-                { name: "Biogesic", desc: "Paracetamol" },
-                { name: "Benadryl", desc: "Antihistamine" },
-                { name: "Piattos", desc: "Snack" },
-                { name: "Eskinol", desc: "Face Care" },
-                { name: "Voltaren", desc: "Pain Relief" },
-                { name: "Thomapyrin", desc: "Pain Relief" },
-                { name: "Betahistine", desc: "Vertigo" },
-                { name: "Saridon", desc: "Headache" },
-                { name: "KoolFever", desc: "Fever Patch" },
-                { name: "Salonpas", desc: "Pain Relief" }
-              ].map((product, index) => (
-                <ProductCard
-                  key={index}
-                  name={product.name}
-                  description={product.desc}
-                  onAdd={() => console.log(`Added ${product.name} to cart`)}
-                />
-              ))}
-            </div>
+            {/* Loading State */}
+            {loading && (
+              <div className="text-center py-8">
+                <div className="loading loading-spinner loading-lg text-blue-600"></div>
+                <p className="mt-2 text-gray-600">Loading products...</p>
+              </div>
+            )}
 
-            {/* Pagination */}
+            {/* Error State */}
+            {error && (
+              <div className="alert alert-warning mb-4">
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Product Grid - DYNAMIC DATA */}
+            {!loading && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+                {products.length === 0 ? (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    <p>No products found</p>
+                    <p className="text-sm">Add products to your database to see them here</p>
+                  </div>
+                ) : (
+                  products.map((product) => (
+                    <ProductCard
+                      key={product.ProductID}
+                      name={product.Name}
+                      description={product.GenericName || product.Name}
+                      image={product.Image}
+                      onAdd={() => addToCart(product)}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Pagination - same as before */}
             <div className="flex justify-center space-x-2">
               <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">‹</button>
               <button className="px-3 py-1 bg-blue-600 text-white rounded">1</button>
@@ -232,7 +293,12 @@ const DashboardPage = () => {
             </div>
             <div className="flex space-x-2 w-full sm:w-auto">
               <button className="px-3 py-1 bg-blue-600 text-white text-sm rounded flex-1 sm:flex-none text-center">Senior/PWD</button>
-              <button className="px-3 py-1 bg-white border border-gray-300 text-gray-700 text-sm rounded flex-1 sm:flex-none text-center">Clear</button>
+              <button 
+                onClick={clearCart}
+                className="px-3 py-1 bg-white border border-gray-300 text-gray-700 text-sm rounded flex-1 sm:flex-none text-center hover:bg-gray-50"
+              >
+                Clear
+              </button>
             </div>
           </div>
         </div>
@@ -240,38 +306,28 @@ const DashboardPage = () => {
         {/* Order Items */}
         <div className="flex-1 overflow-y-auto p-4">
           <div className="space-y-3">
-            {/* Order Items */}
-            {[
-              {
-                product: {
-                  id: "1",
-                  name: "Biogesic 25Mg Capsule",
-                  discounts: ["Senior/PWD Discount", "VAT Exemption"]
-                },
-                quantity: 10,
-                price: "₱77.50",
-                discount: "- ₱15.50"
-              },
-              {
-                product: {
-                  id: "2",
-                  name: "Benadryl Syrup",
-                  discounts: ["Senior/PWD Discount", "VAT Exemption"]
-                },
-                quantity: 5,
-                price: "₱125.00",
-                discount: "- ₱25.00"
-              }
-            ].map((item) => (
-              <OrderItem
-                key={item.product.id}
-                product={item.product}
-                quantity={item.quantity}
-                price={item.price}
-                discount={item.discount}
-                onQuantityChange={(newQuantity) => console.log(`Updated quantity to ${newQuantity}`)}
-              />
-            ))}
+            {cartItems.length === 0 ? (
+              <div className="text-center text-gray-500 py-8">
+                <ShoppingCart className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>No items in cart</p>
+                <p className="text-sm">Add products to get started</p>
+              </div>
+            ) : (
+              cartItems.map((item) => (
+                <OrderItem
+                  key={item.id}
+                  product={{
+                    id: item.id,
+                    name: item.name,
+                    discounts: item.discounts
+                  }}
+                  quantity={item.quantity}
+                  price={`₱${item.price.toFixed(2)}`}
+                  discount={`- ₱${(item.price * 0.2).toFixed(2)}`}
+                  onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
+                />
+              ))
+            )}
           </div>
         </div>
 
@@ -280,15 +336,15 @@ const DashboardPage = () => {
           <div className="space-y-2 mb-4">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">₱1,868.00</span>
+              <span className="font-medium">₱{calculateSubtotal().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Discount</span>
-              <span className="font-medium text-red-500">₱253.50</span>
+              <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">VAT</span>
-              <span className="font-medium">₱27.96</span>
+              <span className="font-medium">₱{((calculateSubtotal() - calculateDiscount()) * 0.12).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Cash Received</span>
@@ -303,7 +359,7 @@ const DashboardPage = () => {
           <div className="border-t pt-3 mb-4">
             <div className="flex justify-between items-center">
               <span className="text-lg font-bold">Total</span>
-              <span className="text-lg font-bold">₱1,642.46</span>
+              <span className="text-lg font-bold">₱{calculateTotal().toFixed(2)}</span>
             </div>
           </div>
 
@@ -325,7 +381,7 @@ const DashboardPage = () => {
 
           {/* Charge Button */}
           <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700">
-            Charge ₱1,642.46
+            Charge ₱{calculateTotal().toFixed(2)}
           </button>
         </div>
       </div>
