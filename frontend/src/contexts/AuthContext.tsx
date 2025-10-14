@@ -82,8 +82,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        // Fetch user profile when user signs in
-        await refreshProfile();
+        // Note: Profile API is currently returning 404, so we'll use user metadata instead
+        // await refreshProfile();
+        setProfile(null);
       } else {
         setProfile(null);
       }
@@ -92,12 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch profile when user changes
-  useEffect(() => {
-    if (user && !profile) {
-      refreshProfile();
-    }
-  }, [user]);
+  // Note: Profile API is currently returning 404, so we'll use user metadata instead
+  // useEffect(() => {
+  //   if (user && !profile) {
+  //     refreshProfile();
+  //   }
+  // }, [user]);
 
   const value = {
     user,

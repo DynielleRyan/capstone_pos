@@ -9,6 +9,7 @@ require("dotenv/config"); //global import for all files
 const database_1 = require("./utils/database");
 const products_1 = __importDefault(require("./routes/products"));
 const auth_1 = __importDefault(require("./routes/auth"));
+const transactions_1 = __importDefault(require("./routes/transactions"));
 // dotenv.config(); //loads the env file globally 
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5002;
@@ -21,6 +22,7 @@ app.use(express_1.default.json());
 //Routes
 app.use('/api/products', products_1.default);
 app.use('/api/auth', auth_1.default);
+app.use('/api/transactions', transactions_1.default);
 app.get('/api/health', (req, res) => {
     res.json({
         message: 'API is running',
@@ -36,19 +38,6 @@ app.get('/api/test-db', async (req, res) => {
         }
         ;
         res.json({ message: 'Database Connected', data });
-    }
-    catch (error) {
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-});
-app.get('/api/test-users', async (req, res) => {
-    try {
-        const { data, error } = await database_1.supabase.from('User').select('*').limit(3);
-        if (error) {
-            throw error;
-        }
-        ;
-        res.json({ message: 'User table structure', data });
     }
     catch (error) {
         res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
