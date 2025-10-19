@@ -23,59 +23,62 @@ import OrderItem from '../components/OrderItem';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
+// Main dashboard component for the pharmacy PoS system
 
 
-// Add interface for Product from database
+
+// Product interface - matches database schema
 interface Product {
-  ProductID: string;
-  Name: string;
-  GenericName: string;
-  Category: string;
-  Brand: string;
-  SellingPrice: number;
-  IsVATExemptYN: boolean;
-  PrescriptionYN: boolean;
-  Image?: string;
+  ProductID: string;           // Unique product identifier
+  Name: string;               // Product display name
+  GenericName: string;        // Generic/brand name
+  Category: string;           // Product category
+  Brand: string;              // Product brand
+  SellingPrice: number;       // Price per unit
+  IsVATExemptYN: boolean;     // VAT exemption status
+  PrescriptionYN: boolean;    // Prescription requirement
+  Image?: string;             // Product image URL
 }
 
-// Add interface for CartItem
+// Shopping cart item interface
 interface CartItem {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  quantity: number;
-  discounts?: string[];
+  id: string;                 // Product ID
+  name: string;               // Product name
+  description: string;        // Product description
+  price: number;              // Unit price
+  quantity: number;           // Quantity in cart
+  discounts?: string[];       // Applied discounts
 }
 
 const DashboardPage = () => {
   const { signOut, profile, user } = useAuth();
   const navigate = useNavigate();
   
-  // Add state for products and cart
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // Product and cart state management
+  const [products, setProducts] = useState<Product[]>([]);           // All products from API
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]); // Filtered products for display
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);        // Shopping cart items
+  const [loading, setLoading] = useState(true);                     // Loading state
+  const [error, setError] = useState('');                           // Error messages
   
-  // Filter and search state
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage] = useState<number>(10);
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState<string>('');         // Search input
+  const [selectedCategory, setSelectedCategory] = useState<string>(''); // Selected category
+  const [selectedFilter, setSelectedFilter] = useState<string>('all'); // Filter type
+  const [currentPage, setCurrentPage] = useState<number>(1);        // Current page for pagination
+  const [itemsPerPage] = useState<number>(10);                     // Items per page
   
-  // Payment state
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
-  const [referenceNumber, setReferenceNumber] = useState<string>('');
-  const [cashReceived, setCashReceived] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentTime, setCurrentTime] = useState('');
+  // Payment processing state
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(''); // Payment method
+  const [referenceNumber, setReferenceNumber] = useState<string>(''); // Payment reference
+  const [cashReceived, setCashReceived] = useState<string>('');     // Cash amount received
+  const [isProcessing, setIsProcessing] = useState(false);          // Transaction processing state
+  const [currentTime, setCurrentTime] = useState('');               // Current time display
+  const [isSeniorPWDActive, setIsSeniorPWDActive] = useState(false); // Senior/PWD discount state
 
   // Note: Profile API is currently returning 404, so we'll use user metadata instead
 
-  // Update time every second (Philippine time)
+  // Real-time clock display - updates every second with Philippine timezone
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -88,16 +91,17 @@ const DashboardPage = () => {
       setCurrentTime(philippineTime);
     };
 
-    // Update immediately
+    // Update immediately on mount
     updateTime();
     
-    // Update every second
+    // Set up interval to update every second
     const interval = setInterval(updateTime, 1000);
     
+    // Cleanup interval on unmount
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch products from API
+  // Fetch products from backend API on component mount
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -119,11 +123,11 @@ const DashboardPage = () => {
     fetchProducts();
   }, []);
 
-  // Filter products based on search, category, and filter criteria
+  // Filter and sort products based on search, category, and filter criteria
   useEffect(() => {
     let filtered = [...products];
 
-    // Search filter
+    // Text search filter - searches name, generic name, and brand
     if (searchTerm.trim()) {
       filtered = filtered.filter(product =>
         product.Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -132,14 +136,14 @@ const DashboardPage = () => {
       );
     }
 
-    // Category filter
+    // Category filter - exact match with selected category
     if (selectedCategory) {
       filtered = filtered.filter(product =>
         product.Category.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
 
-    // Additional filters
+    // Additional filters and sorting options
     switch (selectedFilter) {
       case 'prescription':
         filtered = filtered.filter(product => product.PrescriptionYN);
@@ -171,13 +175,13 @@ const DashboardPage = () => {
     setCurrentPage(1); // Reset to first page when filters change
   }, [products, searchTerm, selectedCategory, selectedFilter]);
 
-  // Pagination calculations
+  // Pagination calculations for product display
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const currentProducts = filteredProducts.slice(startIndex, endIndex);
 
-  // Pagination handlers
+  // Pagination navigation handlers
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
@@ -196,11 +200,12 @@ const DashboardPage = () => {
     }
   };
 
-  // Add function to add item to cart
+  // Add product to shopping cart - increments quantity if already exists
   const addToCart = (product: Product) => {
     const existingItem = cartItems.find(item => item.name === product.Name);
     
     if (existingItem) {
+      // Increment quantity if item already in cart
       setCartItems(prev => 
         prev.map(item => 
           item.name === product.Name 
@@ -209,23 +214,25 @@ const DashboardPage = () => {
         )
       );
     } else {
+      // Add new item to cart
       const newItem: CartItem = {
         id: product.ProductID,
         name: product.Name,
         description: product.GenericName || product.Name,
         price: product.SellingPrice,
-        quantity: 1,
-        discounts: ["Senior/PWD Discount", "VAT Exemption"]
+        quantity: 1
       };
       setCartItems(prev => [...prev, newItem]);
     }
   };
 
-  // Add function to update quantity
+  // Update item quantity in cart - removes item if quantity is 0
   const updateQuantity = (id: string, newQuantity: number) => {
     if (newQuantity <= 0) {
+      // Remove item from cart if quantity is 0 or negative
       setCartItems(prev => prev.filter(item => item.id !== id));
     } else {
+      // Update quantity for existing item
       setCartItems(prev => 
         prev.map(item => 
           item.id === id ? { ...item, quantity: newQuantity } : item
@@ -234,7 +241,7 @@ const DashboardPage = () => {
     }
   };
 
-  // Add function to clear cart with confirmation
+  // Clear entire cart with user confirmation
   const clearCart = () => {
     if (cartItems.length === 0) {
       toast.error('Cart is already empty');
@@ -254,24 +261,24 @@ const DashboardPage = () => {
     }
   };
 
-  // Add function to handle payment method selection
+  // Handle payment method selection - clears reference number when changed
   const handlePaymentMethodSelect = (method: string) => {
     setSelectedPaymentMethod(method);
     // Clear reference number when payment method changes
     setReferenceNumber('');
   };
 
-  // Add function to handle reference number change
+  // Handle reference number input changes
   const handleReferenceNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setReferenceNumber(e.target.value);
   };
 
-  // Add function to handle cash received change
+  // Handle cash received amount input changes
   const handleCashReceivedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCashReceived(e.target.value);
   };
 
-  // Add function to calculate change
+  // Calculate change for cash payments
   const calculateChange = () => {
     if (selectedPaymentMethod === 'cash' && cashReceived) {
       const received = parseFloat(cashReceived) || 0;
@@ -281,24 +288,34 @@ const DashboardPage = () => {
     return 0;
   };
 
-  // Add calculation functions
+  // Financial calculation functions
   const calculateSubtotal = () => {
+    // Sum of all item prices × quantities
     return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
   };
 
   const calculateDiscount = () => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity * 0.2), 0);
+    // Only apply discount if Senior/PWD button is active
+    if (!isSeniorPWDActive) {
+      return 0; // No discount unless button is clicked
+    }
+    
+    // Apply 20% discount to entire transaction when button is active
+    const subtotal = calculateSubtotal();
+    return subtotal * 0.2;
   };
 
   const calculateTotal = () => {
+    // Total = Subtotal - Discount + VAT (12% on discounted amount)
     const subtotal = calculateSubtotal();
     const discount = calculateDiscount();
     const vat = (subtotal - discount) * 0.12;
     return subtotal - discount + vat;
   };
 
-  // Add function to process charge/transaction
+  // Process transaction and send to backend API
   const handleCharge = async () => {
+    // Validate required fields before processing
     if (!selectedPaymentMethod) {
       toast.error('Please select a payment method');
       return;
@@ -320,30 +337,35 @@ const DashboardPage = () => {
     const loadingToast = toast.loading('Processing transaction...');
 
     try {
-      // Combine payment method prefix with manually entered reference number
+      // Create full reference number with payment method prefix
       const prefix = selectedPaymentMethod === 'cash' ? 'CASH' : 
                     selectedPaymentMethod === 'gcash' ? 'GCASH' : 'MAYA';
       const fullReferenceNumber = `${prefix}-${referenceNumber}`;
       
+      // Prepare transaction data for API
       const transactionData = {
         referenceNo: fullReferenceNumber,
         paymentMethod: selectedPaymentMethod,
-        total: calculateTotal(),
         subtotal: calculateSubtotal(),
-        discount: calculateDiscount(),
-        vat: (calculateSubtotal() - calculateDiscount()) * 0.12,
+        isSeniorPWDActive: isSeniorPWDActive, // Send discount flag instead of calculated amount
         cashReceived: selectedPaymentMethod === 'cash' ? parseFloat(cashReceived) || 0 : null,
         change: calculateChange(),
+        userId: user?.id || user?.user_metadata?.id, // Send the authenticated user's ID
         items: cartItems.map(item => ({
           productId: item.id,
           productName: item.name,
           quantity: item.quantity,
-          unitPrice: item.price,
-          subtotal: item.price * item.quantity
+          unitPrice: item.price
         }))
       };
 
+      console.log('User object:', user); // Debug log
+      console.log('Sending transaction data:', transactionData); // Debug log
+
+      // Send transaction to backend
       const response = await api.post('/transactions', transactionData);
+      
+      console.log('Transaction response:', response.data); // Debug log
       
       if (response.data.success) {
         toast.dismiss(loadingToast);
@@ -357,8 +379,9 @@ const DashboardPage = () => {
         toast.dismiss(loadingToast);
         toast.error('Transaction failed: ' + response.data.message);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Transaction error:', error);
+      console.error('Error details:', error.response?.data); // Debug log
       toast.dismiss(loadingToast);
       toast.error('Transaction failed. Please try again.');
     } finally {
@@ -366,6 +389,7 @@ const DashboardPage = () => {
     }
   };
 
+  // Handle user logout
   const handleLogout = async () => {
     try {
       await signOut();
@@ -380,7 +404,12 @@ const DashboardPage = () => {
       <div className="w-full lg:w-80 bg-white shadow-lg flex flex-col lg:flex-col">
         {/* Logo */}
         <div className="p-6 border-b text-center">
-          <h1 className="text-2xl font-bold text-blue-600">Jambo's Pharmacy</h1>
+          <h1 
+            onClick={() => navigate('/dashboard')}
+            className="text-2xl font-bold text-blue-600 cursor-pointer hover:text-blue-700 transition-colors"
+          >
+            Jambo's Pharmacy
+          </h1>
         </div>
 
         {/* Navigation - same as before */}
@@ -619,7 +648,16 @@ const DashboardPage = () => {
               <span className="font-medium text-gray-800">Order</span>
             </div>
             <div className="flex space-x-2 w-full sm:w-auto">
-              <button className="px-3 py-1 bg-blue-600 text-white text-sm rounded flex-1 sm:flex-none text-center">Senior/PWD</button>
+              <button 
+                onClick={() => setIsSeniorPWDActive(!isSeniorPWDActive)}
+                className={`px-3 py-1 text-sm rounded flex-1 sm:flex-none text-center transition-colors ${
+                  isSeniorPWDActive
+                    ? 'bg-green-600 text-white'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isSeniorPWDActive ? '✓ Senior/PWD' : 'Senior/PWD'}
+              </button>
               <button 
                 onClick={clearCart}
                 className="px-3 py-1 bg-white border border-gray-300 text-gray-700 text-sm rounded flex-1 sm:flex-none text-center hover:bg-gray-50"
@@ -645,12 +683,10 @@ const DashboardPage = () => {
                   key={item.id}
                   product={{
                     id: item.id,
-                    name: item.name,
-                    discounts: item.discounts
+                    name: item.name
                   }}
                   quantity={item.quantity}
                   price={`₱${item.price.toFixed(2)}`}
-                  discount={`- ₱${(item.price * 0.2).toFixed(2)}`}
                   onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
                 />
               ))
@@ -665,10 +701,14 @@ const DashboardPage = () => {
               <span className="text-gray-600">Subtotal</span>
               <span className="font-medium">₱{calculateSubtotal().toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Discount</span>
-              <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
-            </div>
+            
+            {/* Only show discount line if button is active */}
+            {isSeniorPWDActive && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Senior/PWD Discount (20%)</span>
+                <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">VAT</span>
               <span className="font-medium">₱{((calculateSubtotal() - calculateDiscount()) * 0.12).toFixed(2)}</span>

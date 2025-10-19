@@ -5,8 +5,14 @@ import {
   ChevronDown,
   ArrowLeft,
   CreditCard,
-  Banknote
+  Banknote,
+  User,
+  X,
+  Calendar,
+  Clock,
+  Receipt
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
 interface Transaction {
@@ -24,11 +30,14 @@ interface TransactionItem {
   Quantity: number;
   UnitPrice: number;
   Subtotal: number;
+  VATAmount?: number;
+  DiscountAmount?: number;
   Image?: string;
 }
 
 const HistoryPage = () => {
   const navigate = useNavigate();
+  const { profile, user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +46,8 @@ const HistoryPage = () => {
   const [orderNo, setOrderNo] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('all');
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   // Filter transactions based on search and filters
   useEffect(() => {
@@ -62,7 +73,7 @@ const HistoryPage = () => {
     // Payment method filter
     if (selectedPaymentMethod !== 'all') {
       filtered = filtered.filter(transaction => 
-        transaction.PaymentMethod === selectedPaymentMethod
+        transaction.PaymentMethod.toLowerCase() === selectedPaymentMethod.toLowerCase()
       );
     }
 
@@ -99,6 +110,8 @@ const HistoryPage = () => {
             Quantity: item.Quantity,
             UnitPrice: item.UnitPrice,
             Subtotal: item.Subtotal,
+            VATAmount: item.VATAmount || 0,
+            DiscountAmount: item.DiscountAmount || 0,
             Image: item.Product?.Image || 'https://via.placeholder.com/150x150/E5E7EB/6B7280?text=No+Image'
           })) || []
         }));
@@ -152,24 +165,60 @@ const HistoryPage = () => {
     }
   };
 
+  const openTransactionModal = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedTransaction(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top Bar - Same as Dashboard */}
       <div className="bg-white shadow-sm p-4 flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
-        {/* Search Bar */}
-        <div className="relative w-full sm:w-auto">
-          <input
-            type="text"
-            placeholder="Search"
-            className="w-full sm:w-80 pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <Search className="absolute right-3 top-2.5 w-5 h-5 text-gray-400" />
+        {/* Pharmacy Logo */}
+        <div>
+          <h1 
+            onClick={() => navigate('/dashboard')}
+            className="text-2xl font-bold text-blue-600 cursor-pointer hover:text-blue-700 transition-colors"
+          >
+            Jambo's Pharmacy
+          </h1>
         </div>
 
         {/* User Profile */}
         <div className="flex items-center space-x-3">
-          <span className="text-gray-700 font-medium hidden sm:block">Jemsey Amonsot</span>
-          <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
+          <span className="text-gray-700 font-medium hidden sm:block">
+            {(() => {
+              // Use profile data if available (from backend API)
+              if (profile?.firstName && profile?.lastName) {
+                return `${profile.firstName} ${profile.lastName}`;
+              }
+              if (profile?.full_name) {
+                return profile.full_name;
+              }
+              
+              // Fallback to user metadata (from Supabase auth)
+              if (user?.user_metadata?.first_name && user?.user_metadata?.last_name) {
+                return `${user.user_metadata.first_name} ${user.user_metadata.last_name}`;
+              }
+              if (user?.user_metadata?.full_name) {
+                return user.user_metadata.full_name;
+              }
+              if (user?.user_metadata?.display_name) {
+                return user.user_metadata.display_name;
+              }
+              
+              // Final fallback
+              return 'User';
+            })()}
+          </span>
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+            <User className="w-5 h-5 text-blue-600" />
+          </div>
         </div>
       </div>
 
@@ -333,13 +382,12 @@ const HistoryPage = () => {
                 </div>
 
                 {/* Order Footer */}
-                <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
-                  <div className="flex items-center space-x-2">
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-500">See More</span>
-                  </div>
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                    View
+                <div className="flex justify-end mt-4 pt-4 border-t border-gray-200">
+                  <button 
+                    onClick={() => openTransactionModal(transaction)}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    View Details
                   </button>
                 </div>
               </div>
@@ -356,6 +404,204 @@ const HistoryPage = () => {
           <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">›</button>
         </div>
       </div>
+
+      {/* Transaction Details Modal */}
+      {isModalOpen && selectedTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center space-x-3">
+                <Receipt className="w-6 h-6 text-blue-600" />
+                <h2 className="text-xl font-semibold text-gray-800">Transaction Details</h2>
+              </div>
+              <button
+                onClick={closeModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Transaction Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Receipt className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Order Number:</span>
+                    <span className="font-medium">#{selectedTransaction.ReferenceNo}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Date:</span>
+                    <span className="font-medium">{formatDate(selectedTransaction.OrderDateTime)}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Clock className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Time:</span>
+                    <span className="font-medium">{formatTime(selectedTransaction.OrderDateTime)}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    {getPaymentMethodIcon(selectedTransaction.PaymentMethod)}
+                    <span className="text-sm text-gray-600">Payment Method:</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(selectedTransaction.PaymentMethod)}`}>
+                      {selectedTransaction.PaymentMethod}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <User className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Issued by:</span>
+                    <span className="font-medium">
+                      {(() => {
+                        // Use profile data if available (from backend API)
+                        if (profile?.firstName && profile?.lastName) {
+                          return `${profile.firstName} ${profile.lastName}`;
+                        }
+                        if (profile?.full_name) {
+                          return profile.full_name;
+                        }
+                        
+                        // Fallback to user metadata (from Supabase auth)
+                        if (user?.user_metadata?.first_name && user?.user_metadata?.last_name) {
+                          return `${user.user_metadata.first_name} ${user.user_metadata.last_name}`;
+                        }
+                        if (user?.user_metadata?.full_name) {
+                          return user.user_metadata.full_name;
+                        }
+                        if (user?.user_metadata?.display_name) {
+                          return user.user_metadata.display_name;
+                        }
+                        
+                        // Final fallback
+                        return 'Current User';
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Breakdown */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Items Purchased</h3>
+                <div className="space-y-3">
+                  {selectedTransaction.Items.map((item, index) => (
+                    <div key={index} className="p-4 bg-gray-50 rounded-lg space-y-3">
+                      {/* Product Header */}
+                      <div className="flex items-center space-x-4">
+                        {/* Product Image */}
+                        <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
+                          {item.Image ? (
+                            <img 
+                              src={item.Image} 
+                              alt={item.ProductName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 rounded-lg"></div>
+                          )}
+                        </div>
+
+                        {/* Product Details */}
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-800">{item.ProductName}</h4>
+                          <p className="text-sm text-gray-500">Unit Price: ₱{item.UnitPrice.toFixed(2)}</p>
+                        </div>
+
+                        {/* Quantity */}
+                        <div className="text-center">
+                          <div className="text-sm text-gray-500">Qty</div>
+                          <div className="font-semibold">{item.Quantity}</div>
+                        </div>
+                      </div>
+
+                      {/* Price Breakdown */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        {/* Base Amount */}
+                        <div className="text-center">
+                          <div className="text-gray-500">Base Amount</div>
+                          <div className="font-medium">₱{(item.UnitPrice * item.Quantity).toFixed(2)}</div>
+                        </div>
+
+                        {/* Discount */}
+                        <div className="text-center">
+                          <div className="text-gray-500">Discount</div>
+                          <div className={`font-medium ${item.DiscountAmount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            {item.DiscountAmount > 0 ? `-₱${item.DiscountAmount.toFixed(2)}` : '₱0.00'}
+                          </div>
+                        </div>
+
+                        {/* VAT */}
+                        <div className="text-center">
+                          <div className="text-gray-500">VAT (12%)</div>
+                          <div className={`font-medium ${item.VATAmount > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            {item.VATAmount > 0 ? `₱${item.VATAmount.toFixed(2)}` : '₱0.00'}
+                          </div>
+                        </div>
+
+                        {/* Final Subtotal */}
+                        <div className="text-center">
+                          <div className="text-gray-500">Subtotal</div>
+                          <div className="font-semibold text-gray-800">₱{item.Subtotal.toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      {/* Note for older transactions */}
+                      {item.VATAmount === 0 && item.DiscountAmount === 0 && (
+                        <div className="text-center">
+                          <p className="text-xs text-gray-500 italic">
+                            * Detailed breakdown not available for this transaction
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Discount/VAT Status */}
+                      <div className="flex justify-center space-x-4">
+                        {item.DiscountAmount > 0 && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            ✓ Discounted
+                          </span>
+                        )}
+                        {item.VATAmount > 0 && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            VAT Applied
+                          </span>
+                        )}
+                        {item.DiscountAmount === 0 && item.VATAmount === 0 && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            No Discount/VAT
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Total Summary */}
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-gray-800">Total Amount:</span>
+                  <span className="text-xl font-bold text-blue-600">₱{selectedTransaction.Total.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end p-6 border-t bg-gray-50">
+              <button
+                onClick={closeModal}
+                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
