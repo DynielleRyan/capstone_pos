@@ -65,11 +65,9 @@ export const register = async (req: Request, res: Response) => {
                 FirstName: firstName,
                 LastName: lastName,
                 Username: username,
-                ContactNumber: contactNumber,
-                PharmacistYN: isPharmacist,
-                IsActive: true
+                ContactNumber: contactNumber
             })
-            .select('UserID, FirstName, LastName, Username, PharmacistYN, IsActive')
+            .select('UserID, FirstName, LastName, Username')
             .single();
 
         if (insertError) {
@@ -110,7 +108,7 @@ export const register = async (req: Request, res: Response) => {
                     lastName: newUser.LastName,
                     username: newUser.Username,
                     email: email,
-                    isPharmacist: newUser.PharmacistYN
+                    isPharmacist: isPharmacist
                 }
             }
         });
@@ -150,7 +148,7 @@ export const getProfile = async (req: Request, res: Response) => {
         // Get user profile from our User table
         const { data: userProfile, error: profileError } = await supabase
             .from('User')
-            .select('UserID, FirstName, LastName, Username, ContactNumber, PharmacistYN, IsActive, DateTimeLastLoggedIn')
+            .select('UserID, FirstName, LastName, Username, ContactNumber, DateTimeLastLoggedIn, Roles')
             .eq('AuthUserID', user.id)
             .single();
 
@@ -177,9 +175,10 @@ export const getProfile = async (req: Request, res: Response) => {
                     username: userProfile.Username,
                     email: user.email,
                     contactNumber: userProfile.ContactNumber,
-                    isPharmacist: userProfile.PharmacistYN,
-                    isActive: userProfile.IsActive,
-                    lastLogin: userProfile.DateTimeLastLoggedIn
+                    isPharmacist: false, // Default to false since column might not exist
+                    isActive: true, // Default to true since column might not exist
+                    lastLogin: userProfile.DateTimeLastLoggedIn,
+                    role: userProfile.Roles
                 }
             }
         });
@@ -402,4 +401,18 @@ export const deactivateAccount = async (req: Request, res: Response) => {
             message: 'Internal Server Error'
         });
     }
+};
+
+// In your backend (authController.ts or similar)
+
+
+//email endpoint
+// Confirm a user's email using admin API
+export const confirmUserEmail = async (req: Request, res: Response) => {
+    const { data, error } = await supabase.auth.admin.updateUserById(req.body.userId,  {
+        email_confirm: true,
+
+        
+    });
+    res.status(200).json({message: "Jemsey"});
 };

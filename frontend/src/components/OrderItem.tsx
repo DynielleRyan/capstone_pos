@@ -12,6 +12,7 @@ interface OrderItemProps {
   quantity: number;          // Current quantity in cart
   price: string;            // Formatted price string
   discount?: string;        // Formatted discount amount
+  stock?: number;           // Available stock
   onQuantityChange: (newQuantity: number) => void; // Quantity change callback
   onRemove?: () => void;    // Optional remove callback
 }
@@ -21,10 +22,13 @@ const OrderItem: React.FC<OrderItemProps> = ({
   product, 
   quantity, 
   price, 
-  discount, 
+  discount,
+  stock,
   onQuantityChange,
   onRemove 
 }) => {
+  const availableStock = stock || 0;
+  
   return (
     <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
       {/* Product image */}
@@ -56,6 +60,7 @@ const OrderItem: React.FC<OrderItemProps> = ({
             quantity={quantity} 
             onChange={onQuantityChange}
             min={0}
+            max={availableStock}
           />
           <div className="text-right">
             <div className="text-sm font-medium">{price}</div>

@@ -29,6 +29,10 @@ const LoginPage = () => {
     setError('');
     setIsLoading(true);
 
+    console.log('Attempting login with:', { email, password: '***' });
+    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+    console.log('Supabase Anon Key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
     try {
       const { data, error } = await auth.signIn(email, password);
 

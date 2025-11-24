@@ -38,6 +38,7 @@ interface Product {
   IsVATExemptYN: boolean;     // VAT exemption status
   PrescriptionYN: boolean;    // Prescription requirement
   Image?: string;             // Product image URL
+  stock?: number;             // Available stock (optional)
 }
 
 // Shopping cart item interface
@@ -47,6 +48,7 @@ interface CartItem {
   description: string;        // Product description
   price: number;              // Unit price
   quantity: number;           // Quantity in cart
+  stock?: number;             // Available stock
   discounts?: string[];       // Applied discounts
 }
 
@@ -108,7 +110,27 @@ const DashboardPage = () => {
         setLoading(true);
         const response = await api.get('/products');
         console.log('Products fetched:', response.data); // Debug log
-        setProducts(response.data);
+        
+        // Fetch stock for each product
+        const productsWithStock = await Promise.all(
+          response.data.map(async (product: Product) => {
+            try {
+              const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
+              return {
+                ...product,
+                stock: stockResponse.data.totalStock || 0
+              };
+            } catch (err) {
+              console.error(`Error fetching stock for product ${product.ProductID}:`, err);
+              return {
+                ...product,
+                stock: 0
+              };
+            }
+          })
+        );
+        
+        setProducts(productsWithStock);
         setError('');
       } catch (err) {
         console.error('Error fetching products:', err);
@@ -202,9 +224,22 @@ const DashboardPage = () => {
 
   // Add product to shopping cart - increments quantity if already exists
   const addToCart = (product: Product) => {
+    const availableStock = product.stock || 0;
+    
+    // Check if product has stock
+    if (availableStock <= 0) {
+      toast.error('Product is out of stock');
+      return;
+    }
+    
     const existingItem = cartItems.find(item => item.name === product.Name);
     
     if (existingItem) {
+      // Check if we can increment quantity
+      if (existingItem.quantity >= availableStock) {
+        toast.error(`Cannot add more. Only ${availableStock} available in stock.`);
+        return;
+      }
       // Increment quantity if item already in cart
       setCartItems(prev => 
         prev.map(item => 
@@ -220,7 +255,8 @@ const DashboardPage = () => {
         name: product.Name,
         description: product.GenericName || product.Name,
         price: product.SellingPrice,
-        quantity: 1
+        quantity: 1,
+        stock: availableStock
       };
       setCartItems(prev => [...prev, newItem]);
     }
@@ -232,12 +268,21 @@ const DashboardPage = () => {
       // Remove item from cart if quantity is 0 or negative
       setCartItems(prev => prev.filter(item => item.id !== id));
     } else {
-      // Update quantity for existing item
-      setCartItems(prev => 
-        prev.map(item => 
-          item.id === id ? { ...item, quantity: newQuantity } : item
-        )
-      );
+      // Find the cart item and validate against stock
+      const cartItem = cartItems.find(item => item.id === id);
+      if (cartItem) {
+        const availableStock = cartItem.stock || 0;
+        if (newQuantity > availableStock) {
+          toast.error(`Cannot add more. Only ${availableStock} available in stock.`);
+          return;
+        }
+        // Update quantity for existing item
+        setCartItems(prev => 
+          prev.map(item => 
+            item.id === id ? { ...item, quantity: newQuantity } : item
+          )
+        );
+      }
     }
   };
 
@@ -592,6 +637,7 @@ const DashboardPage = () => {
                       name={product.Name}
                       description={product.GenericName || product.Name}
                       image={product.Image}
+                      stock={product.stock}
                       onAdd={() => addToCart(product)}
                     />
                   ))
@@ -687,6 +733,7 @@ const DashboardPage = () => {
                   }}
                   quantity={item.quantity}
                   price={`₱${item.price.toFixed(2)}`}
+                  stock={item.stock}
                   onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
                 />
               ))

@@ -129,7 +129,7 @@ const getProfile = async (req, res) => {
         // Get user profile from our User table
         const { data: userProfile, error: profileError } = await database_1.supabase
             .from('User')
-            .select('UserID, FirstName, LastName, Username, ContactNumber, PharmacistYN, IsActive, DateTimeLastLoggedIn')
+            .select('UserID, FirstName, LastName, Username, ContactNumber, PharmacistYN, IsActive, DateTimeLastLoggedIn, Roles')
             .eq('AuthUserID', user.id)
             .single();
         if (profileError || !userProfile) {
@@ -155,7 +155,8 @@ const getProfile = async (req, res) => {
                     contactNumber: userProfile.ContactNumber,
                     isPharmacist: userProfile.PharmacistYN,
                     isActive: userProfile.IsActive,
-                    lastLogin: userProfile.DateTimeLastLoggedIn
+                    lastLogin: userProfile.DateTimeLastLoggedIn,
+                    role: userProfile.Roles
                 }
             }
         });

@@ -2,52 +2,150 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteTransaction = exports.getTransactionById = exports.getAllTransactions = exports.createTransaction = void 0;
 const database_1 = require("../utils/database");
+// Create a new transaction with items in the database
 const createTransaction = async (req, res) => {
     try {
-        const { referenceNo, paymentMethod, total, subtotal, discount, vat, cashReceived, change, items } = req.body;
-        // Get current user ID from auth (you might need to implement this)
-        // For now, we'll use a placeholder UUID or get it from the request
-        const userId = req.user?.id || 'dfa9ad02-6755-42ab-981b-3acbb87e3ff5'; // Use existing user ID from database
+        // Extract transaction data from request body
+        const { referenceNo, // Payment reference number (e.g., CASH-12345)
+        paymentMethod, // Payment method (cash, gcash, maya)
+        subtotal, // Subtotal before discounts
+        isSeniorPWDActive, // Senior/PWD discount flag
+        cashReceived, // Cash amount received (for cash payments)
+        change, // Change amount (for cash payments)
+        userId, // User ID from frontend
+        items // Array of transaction items
+         } = req.body;
+        // Map Supabase auth user ID to database User ID
+        let finalUserId = null;
+        if (userId) {
+            // userId from frontend is the Supabase auth user ID
+            // We need to find the corresponding UserID in the User table
+            const { data: userRecord, error: userError } = await database_1.supabase
+                .from('User')
+                .select('UserID')
+                .eq('AuthUserID', userId)
+                .single();
+            if (userError) {
+                console.error('Error finding user by AuthUserID:', userError);
+                console.log('AuthUserID not found, using fallback');
+            }
+            else {
+                finalUserId = userRecord.UserID;
+                console.log('Found user mapping:', { authUserId: userId, databaseUserId: finalUserId });
+            }
+        }
+        // Fallback: get first available user if mapping failed
+        if (!finalUserId) {
+            const { data: availableUsers, error: userError } = await database_1.supabase
+                .from('User')
+                .select('UserID')
+                .limit(1);
+            if (userError) {
+                console.error('Error fetching users:', userError);
+                throw new Error('Failed to fetch users');
+            }
+            finalUserId = availableUsers && availableUsers.length > 0
+                ? availableUsers[0].UserID
+                : null;
+            console.log('Using fallback user:', finalUserId);
+        }
+        if (!finalUserId) {
+            throw new Error('No users found in database. Please create a user first.');
+        }
         // Map frontend payment methods to database enum values
+        // Based on the schema, the enum likely accepts: 'Cash', 'Gcash', 'Maya' (with capital letters)
         const dbPaymentMethod = paymentMethod === 'cash' ? 'Cash' :
             paymentMethod === 'gcash' ? 'Gcash' :
                 paymentMethod === 'maya' ? 'Maya' : 'Cash';
-        // Create transaction record
+        // Backend discount calculation - only apply if Senior/PWD is active
+        let discountAmount = 0;
+        let discountId = null;
+        if (isSeniorPWDActive) {
+            // Fetch Senior Citizen Discount from database
+            const { data: seniorDiscount, error: discountError } = await database_1.supabase
+                .from('Discount')
+                .select('DiscountID, Name, DiscountPercent, IsVATExemptYN')
+                .eq('Name', 'Senior Citizen Discount')
+                .single();
+            if (discountError) {
+                console.error('Discount lookup error:', discountError);
+                // If discount not found, use default 20% discount
+                console.log('Using default 20% discount');
+                discountAmount = subtotal * 0.2;
+                discountId = null; // No discount ID since it's not in database
+            }
+            else {
+                // Apply discount using the percentage from database
+                discountAmount = subtotal * (seniorDiscount.DiscountPercent / 100);
+                discountId = seniorDiscount.DiscountID;
+            }
+        }
+        // Backend VAT calculation (on discounted amount)
+        const vatAmount = (subtotal - discountAmount) * 0.12;
+        // Backend total calculation
+        const totalAmount = subtotal - discountAmount + vatAmount;
+        // Prepare transaction data for database insertion
         const transactionData = {
             ReferenceNo: referenceNo,
             PaymentMethod: dbPaymentMethod,
-            Total: total,
+            Total: totalAmount, // Backend calculated
             CashReceived: cashReceived,
             PaymentChange: change,
-            VATAmount: vat,
-            UserID: userId,
-            OrderDateTime: new Date().toISOString()
+            VATAmount: vatAmount, // Backend calculated
+            UserID: finalUserId,
+            OrderDateTime: new Date().toLocaleString('sv-SE', {
+                timeZone: 'Asia/Manila'
+            }).replace(' ', 'T') + '+08:00'
         };
+        console.log('Transaction data to insert:', transactionData);
+        // Insert transaction record into database
         const { data: transaction, error: transactionError } = await database_1.supabase
             .from('Transaction')
             .insert(transactionData)
             .select()
             .single();
-        if (transactionError)
+        if (transactionError) {
+            console.error('Transaction insert error:', transactionError);
             throw transactionError;
-        // Create transaction items
-        const transactionItems = items.map((item) => ({
-            TransactionID: transaction.TransactionID,
-            ProductID: item.productId,
-            Quantity: item.quantity,
-            UnitPrice: item.unitPrice,
-            Subtotal: item.subtotal
-        }));
+        }
+        console.log('Transaction created successfully:', transaction);
+        // Create transaction items array for database insertion
+        const transactionItems = items.map((item) => {
+            // Calculate per-item amounts
+            const itemSubtotal = item.quantity * item.unitPrice;
+            const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discountAmount / subtotal) : 0;
+            const itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+            const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
+            return {
+                TransactionID: transaction.TransactionID,
+                ProductID: item.productId,
+                Quantity: item.quantity,
+                UnitPrice: item.unitPrice,
+                Subtotal: finalSubtotal, // Final amount including VAT
+                DiscountID: discountId, // Reference to the discount if applied
+                DiscountAmount: itemDiscount, // Discount amount for this item
+                VATAmount: itemVAT // VAT amount for this item
+            };
+        });
+        // Insert all transaction items into database
         const { error: itemsError } = await database_1.supabase
             .from('Transaction_Item')
             .insert(transactionItems);
         if (itemsError)
             throw itemsError;
+        // Return success response with transaction details
         res.json({
             success: true,
             message: 'Transaction created successfully',
             transactionId: transaction.TransactionID,
-            referenceNo: transaction.ReferenceNo
+            referenceNo: transaction.ReferenceNo,
+            calculatedAmounts: {
+                subtotal: subtotal,
+                discount: discountAmount,
+                vat: vatAmount,
+                total: totalAmount,
+                isSeniorPWDActive: isSeniorPWDActive
+            }
         });
     }
     catch (error) {
@@ -60,8 +158,10 @@ const createTransaction = async (req, res) => {
     }
 };
 exports.createTransaction = createTransaction;
+// Get all transactions with their items and product details
 const getAllTransactions = async (req, res) => {
     try {
+        // Fetch transactions with related data using Supabase joins
         const { data, error } = await database_1.supabase
             .from('Transaction')
             .select(`
@@ -74,7 +174,7 @@ const getAllTransactions = async (req, res) => {
                     )
                 )
             `)
-            .order('OrderDateTime', { ascending: false });
+            .order('OrderDateTime', { ascending: false }); // Most recent first
         if (error)
             throw error;
         res.json(data);
@@ -89,9 +189,11 @@ const getAllTransactions = async (req, res) => {
     }
 };
 exports.getAllTransactions = getAllTransactions;
+// Get a specific transaction by ID with its items and product details
 const getTransactionById = async (req, res) => {
     try {
         const id = req.params.id;
+        // Fetch single transaction with related data
         const { data, error } = await database_1.supabase
             .from('Transaction')
             .select(`
@@ -120,17 +222,18 @@ const getTransactionById = async (req, res) => {
     }
 };
 exports.getTransactionById = getTransactionById;
+// Delete a transaction and all its associated items
 const deleteTransaction = async (req, res) => {
     try {
         const id = req.params.id;
-        // First delete transaction items
+        // First delete all transaction items (foreign key constraint)
         const { error: itemsError } = await database_1.supabase
             .from('Transaction_Item')
             .delete()
             .eq('TransactionID', id);
         if (itemsError)
             throw itemsError;
-        // Then delete the transaction
+        // Then delete the main transaction record
         const { error: transactionError } = await database_1.supabase
             .from('Transaction')
             .delete()

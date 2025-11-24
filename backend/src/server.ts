@@ -6,6 +6,7 @@ import productRoutes from './routes/products';
 import authRoutes from './routes/auth';
 import transactionRoutes from './routes/transactions';
 // dotenv.config(); //loads the env file globally 
+import inventoryRoutes from './routes/inventory';
 
 const app = express(); 
 const PORT = process.env.PORT || 5002;
@@ -22,7 +23,7 @@ app.use(express.json());
 app.use('/api/products', productRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
-
+app.use('/api/inventory', inventoryRoutes);
 app.get('/api/health', (req, res) => {
     res.json({
         message: 'API is running',

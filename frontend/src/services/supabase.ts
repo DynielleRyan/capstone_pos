@@ -6,8 +6,19 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Validate required environment variables
 if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase environment variables:', {
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+    allEnvVars: import.meta.env
+  });
   throw new Error('Missing Supabase environment variables');
 }
+
+console.log('Supabase client initialized successfully:', {
+  url: supabaseUrl,
+  hasAnonKey: !!supabaseAnonKey,
+  anonKeyLength: supabaseAnonKey?.length
+});
 
 // Create Supabase client with authentication configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
