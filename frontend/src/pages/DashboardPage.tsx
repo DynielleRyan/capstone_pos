@@ -20,6 +20,7 @@ import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
 import ProductCard from '../components/ProductCard';
 import OrderItem from '../components/OrderItem';
+import Receipt from '../components/Receipt';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -77,6 +78,29 @@ const DashboardPage = () => {
   const [isProcessing, setIsProcessing] = useState(false);          // Transaction processing state
   const [currentTime, setCurrentTime] = useState('');               // Current time display
   const [isSeniorPWDActive, setIsSeniorPWDActive] = useState(false); // Senior/PWD discount state
+  
+  // Receipt state
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptData, setReceiptData] = useState<{
+    transactionId: string;
+    referenceNo: string;
+    orderDateTime: string;
+    paymentMethod: string;
+    items: Array<{
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      subtotal: number;
+      discountAmount?: number;
+      vatAmount?: number;
+    }>;
+    subtotal: number;
+    discount: number;
+    vat: number;
+    total: number;
+    cashReceived?: number;
+    change?: number;
+  } | null>(null);
 
   // Note: Profile API is currently returning 404, so we'll use user metadata instead
 
@@ -417,7 +441,40 @@ const DashboardPage = () => {
         toast.success(`Transaction completed successfully!\nReference: ${response.data.referenceNo}`, {
           duration: 4000,
         });
+        
+        // Prepare receipt data
+        const receiptItems = cartItems.map(item => {
+          const itemSubtotal = item.price * item.quantity;
+          const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
+          const itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+          const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
+          
+          return {
+            productName: item.name,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            subtotal: finalSubtotal,
+            discountAmount: itemDiscount,
+            vatAmount: itemVAT
+          };
+        });
+        
+        setReceiptData({
+          transactionId: response.data.transactionId,
+          referenceNo: response.data.referenceNo,
+          orderDateTime: new Date().toISOString(),
+          paymentMethod: selectedPaymentMethod,
+          items: receiptItems,
+          subtotal: calculateSubtotal(),
+          discount: calculateDiscount(),
+          vat: (calculateSubtotal() - calculateDiscount()) * 0.12,
+          total: calculateTotal(),
+          cashReceived: selectedPaymentMethod === 'cash' ? parseFloat(cashReceived) || undefined : undefined,
+          change: selectedPaymentMethod === 'cash' ? calculateChange() : undefined
+        });
+        
         clearCart();
+        setShowReceipt(true);
         // Optionally navigate to history page
         // navigate('/history');
       } else {
@@ -886,6 +943,25 @@ const DashboardPage = () => {
           </button>
         </div>
       </div>
+      
+      {/* Receipt Modal */}
+      {showReceipt && receiptData && (
+        <Receipt
+          transactionId={receiptData.transactionId}
+          referenceNo={receiptData.referenceNo}
+          orderDateTime={receiptData.orderDateTime}
+          paymentMethod={receiptData.paymentMethod}
+          items={receiptData.items}
+          subtotal={receiptData.subtotal}
+          discount={receiptData.discount}
+          vat={receiptData.vat}
+          total={receiptData.total}
+          cashReceived={receiptData.cashReceived}
+          change={receiptData.change}
+          isSeniorPWDActive={isSeniorPWDActive}
+          onClose={() => setShowReceipt(false)}
+        />
+      )}
     </div>
   );
 };
