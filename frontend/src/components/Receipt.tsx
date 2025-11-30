@@ -74,189 +74,265 @@ const Receipt: React.FC<ReceiptProps> = ({
     }
     
     // Build the receipt HTML
+    // Using Letter paper size (standard) but constraining content to 80mm width
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
         <head>
           <title>Receipt - ${referenceNo}</title>
           <style>
+            /* Use Letter size (standard) but content is exactly 80mm wide */
             @page {
-              size: 80mm auto;
+              size: Letter;
               margin: 0;
             }
-            @media print and (min-width: 200mm) {
+            
+            /* For thermal printers - try to use custom size if supported */
+            @media print {
               @page {
-                size: A4;
-                margin: 10mm;
-              }
-              body {
-                max-width: 80mm;
-                margin: 0 auto;
+                size: 80mm auto;
+                margin: 0;
               }
             }
+            
+            * {
+              margin: 0 !important;
+              padding: 0 !important;
+              box-sizing: border-box;
+            }
+            
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100%;
+              height: auto;
+            }
+            
             body {
               font-family: 'Courier New', monospace;
-              font-size: 12pt;
-              line-height: 1.4;
+              font-size: 9pt;
+              line-height: 1.2;
               color: #000;
               background: white;
-              padding: 10mm 5mm;
-              margin: 0;
+              padding: 0 !important;
+              margin: 0 !important;
+              display: flex;
+              justify-content: center;
+              align-items: flex-start;
             }
+            
+            /* Receipt container - exactly 80mm wide (3 inches = 80mm) */
+            .receipt-wrapper {
+              width: 80mm;
+              max-width: 80mm;
+              min-width: 80mm;
+              margin: 0 auto;
+              padding: 2mm 1mm;
+              background: white;
+            }
+            
             .header {
               text-align: center;
-              margin-bottom: 20px;
+              margin-bottom: 3px;
             }
+            
             .header h1 {
-              font-size: 18pt;
+              font-size: 11pt;
               font-weight: bold;
-              margin-bottom: 5px;
+              margin-bottom: 1px;
+              line-height: 1.1;
             }
+            
             .header p {
-              font-size: 9pt;
-              margin: 2px 0;
+              font-size: 7pt;
+              margin: 0;
+              line-height: 1.1;
             }
+            
             .divider {
               border-top: 1px dashed #666;
-              margin: 15px 0;
+              margin: 3px 0;
             }
+            
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin: 5px 0;
-              font-size: 10pt;
+              margin: 1px 0;
+              font-size: 8pt;
+              line-height: 1.2;
             }
+            
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 15px 0;
-              font-size: 10pt;
+              margin: 3px 0;
+              font-size: 8pt;
+              table-layout: fixed;
             }
+            
+            th:first-child, td:first-child {
+              width: 40%;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+            }
+            
+            th:nth-child(2), td:nth-child(2) {
+              width: 12%;
+            }
+            
+            th:nth-child(3), td:nth-child(3) {
+              width: 24%;
+            }
+            
+            th:nth-child(4), td:nth-child(4) {
+              width: 24%;
+            }
+            
             th, td {
-              padding: 5px;
+              padding: 1px 0.5px;
               text-align: left;
+              line-height: 1.1;
+              vertical-align: top;
             }
+            
             th {
               border-bottom: 1px solid #333;
               font-weight: bold;
+              font-size: 8pt;
             }
+            
             td {
               border-bottom: 1px solid #ddd;
+              font-size: 8pt;
             }
+            
             .text-right {
               text-align: right;
             }
+            
             .text-center {
               text-align: center;
             }
+            
             .totals {
-              margin: 15px 0;
+              margin: 3px 0;
             }
+            
             .total-row {
               display: flex;
               justify-content: space-between;
-              margin: 5px 0;
-              font-size: 10pt;
+              margin: 1px 0;
+              font-size: 8pt;
+              line-height: 1.2;
             }
+            
             .total-final {
               border-top: 1px solid #333;
-              padding-top: 10px;
-              margin-top: 10px;
-              font-size: 14pt;
+              padding-top: 2px;
+              margin-top: 2px;
+              font-size: 11pt;
               font-weight: bold;
             }
+            
             .footer {
               text-align: center;
-              margin-top: 20px;
-              font-size: 9pt;
+              margin-top: 3px;
+              font-size: 7pt;
+              line-height: 1.2;
+            }
+            
+            small {
+              font-size: 7pt;
             }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>${pharmacyName}</h1>
-            <p>${pharmacyAddress}</p>
-            <p>${pharmacyContact}</p>
-          </div>
-          <div class="divider"></div>
-          <div class="info-row">
-            <span>Receipt No:</span>
-            <span><strong>${referenceNo}</strong></span>
-          </div>
-          <div class="info-row">
-            <span>Transaction ID:</span>
-            <span><strong>${transactionId}</strong></span>
-          </div>
-          <div class="info-row">
-            <span>Date & Time:</span>
-            <span><strong>${formatDate(orderDateTime)}</strong></span>
-          </div>
-          <div class="info-row">
-            <span>Payment Method:</span>
-            <span><strong>${formatPaymentMethod(paymentMethod)}</strong></span>
-          </div>
-          <div class="divider"></div>
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th class="text-center">Qty</th>
-                <th class="text-right">Price</th>
-                <th class="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(item => `
+          <div class="receipt-wrapper">
+            <div class="header">
+              <h1>${pharmacyName}</h1>
+              <p>${pharmacyAddress}</p>
+              <p>${pharmacyContact}</p>
+            </div>
+            <div class="divider"></div>
+            <div class="info-row">
+              <span>Receipt No:</span>
+              <span><strong>${referenceNo}</strong></span>
+            </div>
+            <div class="info-row">
+              <span>Transaction ID:</span>
+              <span><strong>${transactionId}</strong></span>
+            </div>
+            <div class="info-row">
+              <span>Date & Time:</span>
+              <span><strong>${formatDate(orderDateTime)}</strong></span>
+            </div>
+            <div class="info-row">
+              <span>Payment Method:</span>
+              <span><strong>${formatPaymentMethod(paymentMethod)}</strong></span>
+            </div>
+            <div class="divider"></div>
+            <table>
+              <thead>
                 <tr>
-                  <td>
-                    ${item.productName}
-                    ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Discount: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
-                  </td>
-                  <td class="text-center">${item.quantity}</td>
-                  <td class="text-right">₱${item.unitPrice.toFixed(2)}</td>
-                  <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
+                  <th>Item</th>
+                  <th class="text-center">Qty</th>
+                  <th class="text-right">Price</th>
+                  <th class="text-right">Total</th>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <div class="divider"></div>
-          <div class="totals">
-            <div class="total-row">
-              <span>Subtotal:</span>
-              <span>₱${subtotal.toFixed(2)}</span>
+              </thead>
+              <tbody>
+                ${items.map(item => `
+                  <tr>
+                    <td>
+                      ${item.productName}
+                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Discount: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
+                    </td>
+                    <td class="text-center">${item.quantity}</td>
+                    <td class="text-right">₱${item.unitPrice.toFixed(2)}</td>
+                    <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="divider"></div>
+            <div class="totals">
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>₱${subtotal.toFixed(2)}</span>
+              </div>
+              ${isSeniorPWDActive && discount > 0 ? `
+              <div class="total-row" style="color: red;">
+                <span>Senior/PWD Discount (20%):</span>
+                <span>-₱${discount.toFixed(2)}</span>
+              </div>
+              ` : ''}
+              <div class="total-row">
+                <span>VAT (12%):</span>
+                <span>₱${vat.toFixed(2)}</span>
+              </div>
+              ${paymentMethod === 'cash' && cashReceived ? `
+              <div class="total-row">
+                <span>Cash Received:</span>
+                <span>₱${cashReceived.toFixed(2)}</span>
+              </div>
+              ${change !== undefined && change > 0 ? `
+              <div class="total-row">
+                <span>Change:</span>
+                <span>₱${change.toFixed(2)}</span>
+              </div>
+              ` : ''}
+              ` : ''}
+              <div class="total-row total-final">
+                <span>TOTAL:</span>
+                <span>₱${total.toFixed(2)}</span>
+              </div>
             </div>
-            ${isSeniorPWDActive && discount > 0 ? `
-            <div class="total-row" style="color: red;">
-              <span>Senior/PWD Discount (20%):</span>
-              <span>-₱${discount.toFixed(2)}</span>
+            <div class="divider"></div>
+            <div class="footer">
+              <p>Thank you for your purchase!</p>
+              <p>Please keep this receipt for your records.</p>
+              <p style="margin-top: 5px;">This is a computer-generated receipt.</p>
             </div>
-            ` : ''}
-            <div class="total-row">
-              <span>VAT (12%):</span>
-              <span>₱${vat.toFixed(2)}</span>
-            </div>
-            ${paymentMethod === 'cash' && cashReceived ? `
-            <div class="total-row">
-              <span>Cash Received:</span>
-              <span>₱${cashReceived.toFixed(2)}</span>
-            </div>
-            ${change !== undefined && change > 0 ? `
-            <div class="total-row">
-              <span>Change:</span>
-              <span>₱${change.toFixed(2)}</span>
-            </div>
-            ` : ''}
-            ` : ''}
-            <div class="total-row total-final">
-              <span>TOTAL:</span>
-              <span>₱${total.toFixed(2)}</span>
-            </div>
-          </div>
-          <div class="divider"></div>
-          <div class="footer">
-            <p>Thank you for your purchase!</p>
-            <p>Please keep this receipt for your records.</p>
-            <p style="margin-top: 10px;">This is a computer-generated receipt.</p>
           </div>
         </body>
       </html>
@@ -269,264 +345,17 @@ const Receipt: React.FC<ReceiptProps> = ({
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();
-        // Optionally close after printing
-        // printWindow.close();
       }, 250);
     };
   };
 
-  // Render receipt content
-  const renderReceiptContent = () => (
-    <div className="receipt-container p-6">
-      {/* Pharmacy Header */}
-      <div className="text-center mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">{pharmacyName}</h1>
-        <p className="text-xs text-gray-600">{pharmacyAddress}</p>
-        <p className="text-xs text-gray-600">{pharmacyContact}</p>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-dashed border-gray-400 my-4"></div>
-
-      {/* Transaction Info */}
-      <div className="mb-4 space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Receipt No:</span>
-          <span className="font-medium">{referenceNo}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Transaction ID:</span>
-          <span className="font-medium">{transactionId}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Date & Time:</span>
-          <span className="font-medium">{formatDate(orderDateTime)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Payment Method:</span>
-          <span className="font-medium">{formatPaymentMethod(paymentMethod)}</span>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-dashed border-gray-400 my-4"></div>
-
-      {/* Items List */}
-      <div className="mb-4">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-300">
-              <th className="text-left py-2 text-gray-700">Item</th>
-              <th className="text-center py-2 text-gray-700">Qty</th>
-              <th className="text-right py-2 text-gray-700">Price</th>
-              <th className="text-right py-2 text-gray-700">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item, index) => (
-              <tr key={index} className="border-b border-gray-200">
-                <td className="py-2 text-gray-800">
-                  <div className="font-medium">{item.productName}</div>
-                  {item.discountAmount && item.discountAmount > 0 && (
-                    <div className="text-xs text-red-600">
-                      Discount: ₱{item.discountAmount.toFixed(2)}
-                    </div>
-                  )}
-                </td>
-                <td className="text-center py-2 text-gray-700">{item.quantity}</td>
-                <td className="text-right py-2 text-gray-700">₱{item.unitPrice.toFixed(2)}</td>
-                <td className="text-right py-2 font-medium text-gray-800">
-                  ₱{item.subtotal.toFixed(2)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-dashed border-gray-400 my-4"></div>
-
-      {/* Totals */}
-      <div className="mb-4 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Subtotal:</span>
-          <span className="font-medium">₱{subtotal.toFixed(2)}</span>
-        </div>
-        
-        {isSeniorPWDActive && discount > 0 && (
-          <div className="flex justify-between text-red-600">
-            <span>Senior/PWD Discount (20%):</span>
-            <span className="font-medium">-₱{discount.toFixed(2)}</span>
-          </div>
-        )}
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">VAT (12%):</span>
-          <span className="font-medium">₱{vat.toFixed(2)}</span>
-        </div>
-        
-        {paymentMethod === 'cash' && cashReceived && (
-          <>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Cash Received:</span>
-              <span className="font-medium">₱{cashReceived.toFixed(2)}</span>
-            </div>
-            {change !== undefined && change > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">Change:</span>
-                <span className="font-medium">₱{change.toFixed(2)}</span>
-              </div>
-            )}
-          </>
-        )}
-        
-        <div className="border-t border-gray-400 pt-2 mt-2">
-          <div className="flex justify-between text-lg font-bold">
-            <span>TOTAL:</span>
-            <span>₱{total.toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-dashed border-gray-400 my-4"></div>
-
-      {/* Footer */}
-      <div className="text-center text-xs text-gray-600 space-y-1">
-        <p>Thank you for your purchase!</p>
-        <p>Please keep this receipt for your records.</p>
-        <p className="mt-2">This is a computer-generated receipt.</p>
-      </div>
-    </div>
-  );
-
   return (
     <>
-      {/* Print styles - simple and direct approach */}
-      <style>{`
-        @media print {
-          /* Hide everything on the page */
-          body > * {
-            display: none !important;
-          }
-          
-          /* Show only the receipt overlay */
-          .receipt-overlay {
-            display: block !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            z-index: 999999 !important;
-          }
-          
-          /* Show the modal */
-          .receipt-modal {
-            display: block !important;
-            position: relative !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            background: white !important;
-            overflow: visible !important;
-          }
-          
-          /* Hide non-printable elements */
-          .no-print {
-            display: none !important;
-          }
-          
-          /* Receipt container styling */
-          .receipt-container {
-            display: block !important;
-            padding: 10mm 5mm !important;
-            font-family: 'Courier New', monospace !important;
-            font-size: 12pt !important;
-            line-height: 1.4 !important;
-            color: #000 !important;
-            background: white !important;
-            width: 100% !important;
-          }
-          
-          /* Make sure all content is visible */
-          .receipt-container * {
-            display: block !important;
-            color: #000 !important;
-            visibility: visible !important;
-          }
-          
-          /* Table elements need special handling */
-          .receipt-container table {
-            display: table !important;
-            width: 100% !important;
-          }
-          
-          .receipt-container thead {
-            display: table-header-group !important;
-          }
-          
-          .receipt-container tbody {
-            display: table-row-group !important;
-          }
-          
-          .receipt-container tr {
-            display: table-row !important;
-          }
-          
-          .receipt-container td,
-          .receipt-container th {
-            display: table-cell !important;
-            padding: 4px !important;
-          }
-          
-          /* Flex containers */
-          .receipt-container .flex {
-            display: flex !important;
-          }
-          
-          /* Inline elements */
-          .receipt-container span {
-            display: inline !important;
-          }
-          
-          /* Optimized for 80mm thermal receipt printers */
-          @page {
-            size: 80mm auto;
-            margin: 0;
-          }
-          
-          /* Fallback for regular printers */
-          @media print and (min-width: 200mm) {
-            @page {
-              size: A4;
-              margin: 10mm;
-            }
-            
-            .receipt-container {
-              max-width: 80mm;
-              margin: 0 auto;
-            }
-          }
-          
-          table {
-            page-break-inside: avoid;
-          }
-        }
-      `}</style>
-
-      {/* Overlay - visible on screen, hidden when printing */}
-      <div className="receipt-overlay fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 no-print">
-        <div className="receipt-modal bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      {/* Overlay */}
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
           {/* Header with close button */}
-          <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center no-print">
+          <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
             <h2 className="text-xl font-bold text-gray-800">Receipt</h2>
             <button
               onClick={onClose}
@@ -536,13 +365,123 @@ const Receipt: React.FC<ReceiptProps> = ({
             </button>
           </div>
 
-          {/* Receipt Content - visible on screen */}
-          <div className="receipt-container p-6">
-            {renderReceiptContent()}
+          {/* Receipt Content */}
+          <div className="p-6">
+            <div className="text-center mb-4">
+              <h1 className="text-2xl font-bold text-gray-900 mb-1">{pharmacyName}</h1>
+              <p className="text-xs text-gray-600">{pharmacyAddress}</p>
+              <p className="text-xs text-gray-600">{pharmacyContact}</p>
+            </div>
+
+            <div className="border-t border-dashed border-gray-400 my-4"></div>
+
+            <div className="mb-4 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Receipt No:</span>
+                <span className="font-medium">{referenceNo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Transaction ID:</span>
+                <span className="font-medium">{transactionId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Date & Time:</span>
+                <span className="font-medium">{formatDate(orderDateTime)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Payment Method:</span>
+                <span className="font-medium">{formatPaymentMethod(paymentMethod)}</span>
+              </div>
+            </div>
+
+            <div className="border-t border-dashed border-gray-400 my-4"></div>
+
+            <div className="mb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    <th className="text-left py-2 text-gray-700">Item</th>
+                    <th className="text-center py-2 text-gray-700">Qty</th>
+                    <th className="text-right py-2 text-gray-700">Price</th>
+                    <th className="text-right py-2 text-gray-700">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, index) => (
+                    <tr key={index} className="border-b border-gray-200">
+                      <td className="py-2 text-gray-800">
+                        <div className="font-medium">{item.productName}</div>
+                        {item.discountAmount && item.discountAmount > 0 && (
+                          <div className="text-xs text-red-600">
+                            Discount: ₱{item.discountAmount.toFixed(2)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="text-center py-2 text-gray-700">{item.quantity}</td>
+                      <td className="text-right py-2 text-gray-700">₱{item.unitPrice.toFixed(2)}</td>
+                      <td className="text-right py-2 font-medium text-gray-800">
+                        ₱{item.subtotal.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-dashed border-gray-400 my-4"></div>
+
+            <div className="mb-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Subtotal:</span>
+                <span className="font-medium">₱{subtotal.toFixed(2)}</span>
+              </div>
+              
+              {isSeniorPWDActive && discount > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>Senior/PWD Discount (20%):</span>
+                  <span className="font-medium">-₱{discount.toFixed(2)}</span>
+                </div>
+              )}
+              
+              <div className="flex justify-between">
+                <span className="text-gray-600">VAT (12%):</span>
+                <span className="font-medium">₱{vat.toFixed(2)}</span>
+              </div>
+              
+              {paymentMethod === 'cash' && cashReceived && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Cash Received:</span>
+                    <span className="font-medium">₱{cashReceived.toFixed(2)}</span>
+                  </div>
+                  {change !== undefined && change > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Change:</span>
+                      <span className="font-medium">₱{change.toFixed(2)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+              
+              <div className="border-t border-gray-400 pt-2 mt-2">
+                <div className="flex justify-between text-lg font-bold">
+                  <span>TOTAL:</span>
+                  <span>₱{total.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-dashed border-gray-400 my-4"></div>
+
+            <div className="text-center text-xs text-gray-600 space-y-1">
+              <p>Thank you for your purchase!</p>
+              <p>Please keep this receipt for your records.</p>
+              <p className="mt-2">This is a computer-generated receipt.</p>
+            </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="sticky bottom-0 bg-white border-t p-4 flex gap-2 no-print">
+          <div className="sticky bottom-0 bg-white border-t p-4 flex gap-2">
             <button
               onClick={handlePrint}
               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
@@ -566,4 +505,3 @@ const Receipt: React.FC<ReceiptProps> = ({
 };
 
 export default Receipt;
-
