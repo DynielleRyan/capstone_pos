@@ -133,6 +133,52 @@ const createTransaction = async (req, res) => {
             .insert(transactionItems);
         if (itemsError)
             throw itemsError;
+        // After line 155, before the return statement:
+        // Update stock for each product item
+        for (const item of items) {
+            // Find available Product_Item with stock (FIFO - First In First Out)
+            // Get items with stock > 0, ordered by expiry date (oldest first)
+            const { data: productItems, error: stockError } = await database_1.supabase
+                .from('Product_Item')
+                .select('ProductItemID, Stock, ProductID')
+                .eq('ProductID', item.productId)
+                .gt('Stock', 0)
+                .eq('IsActive', true)
+                .order('ExpiryDate', { ascending: true, nullsFirst: false });
+            if (stockError) {
+                console.error(`Error fetching stock for product ${item.productId}:`, stockError);
+                throw new Error(`Failed to check stock for product ${item.productId}`);
+            }
+            if (!productItems || productItems.length === 0) {
+                throw new Error(`Insufficient stock for product ${item.productId}`);
+            }
+            // Calculate total available stock
+            const totalStock = productItems.reduce((sum, pi) => sum + pi.Stock, 0);
+            if (totalStock < item.quantity) {
+                throw new Error(`Insufficient stock. Available: ${totalStock}, Requested: ${item.quantity}`);
+            }
+            // Decrement stock using FIFO (oldest expiry first)
+            let remainingQuantity = item.quantity;
+            for (const productItem of productItems) {
+                if (remainingQuantity <= 0)
+                    break;
+                const quantityToDeduct = Math.min(remainingQuantity, productItem.Stock);
+                const newStock = productItem.Stock - quantityToDeduct;
+                const { error: updateError } = await database_1.supabase
+                    .from('Product_Item')
+                    .update({
+                    Stock: newStock,
+                    DateTimeLastUpdate: new Date().toISOString()
+                })
+                    .eq('ProductItemID', productItem.ProductItemID);
+                if (updateError) {
+                    console.error(`Error updating stock for ProductItem ${productItem.ProductItemID}:`, updateError);
+                    throw new Error(`Failed to update stock for product item`);
+                }
+                remainingQuantity -= quantityToDeduct;
+                console.log(`Updated stock for ProductItem ${productItem.ProductItemID}: ${productItem.Stock} -> ${newStock}`);
+            }
+        }
         // Return success response with transaction details
         res.json({
             success: true,

@@ -12,5 +12,6 @@ router.get('/profile', authController_1.getProfile);
 router.put('/profile', authController_1.updateProfile);
 router.put('/change-password', authController_1.changePassword);
 router.delete('/deactivate', authController_1.deactivateAccount);
+router.post('/manual-confirm', authController_1.confirmUserEmail);
 exports.default = router;
 //# sourceMappingURL=auth.js.map

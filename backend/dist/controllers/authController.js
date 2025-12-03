@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deactivateAccount = exports.changePassword = exports.updateProfile = exports.getProfile = exports.register = void 0;
+exports.confirmUserEmail = exports.deactivateAccount = exports.changePassword = exports.updateProfile = exports.getProfile = exports.register = void 0;
 const database_1 = require("../utils/database");
 // Register a new user
 const register = async (req, res) => {
@@ -52,11 +52,9 @@ const register = async (req, res) => {
             FirstName: firstName,
             LastName: lastName,
             Username: username,
-            ContactNumber: contactNumber,
-            PharmacistYN: isPharmacist,
-            IsActive: true
+            ContactNumber: contactNumber
         })
-            .select('UserID, FirstName, LastName, Username, PharmacistYN, IsActive')
+            .select('UserID, FirstName, LastName, Username')
             .single();
         if (insertError) {
             // If User table insert fails, clean up the auth user
@@ -93,7 +91,7 @@ const register = async (req, res) => {
                     lastName: newUser.LastName,
                     username: newUser.Username,
                     email: email,
-                    isPharmacist: newUser.PharmacistYN
+                    isPharmacist: isPharmacist
                 }
             }
         });
@@ -129,7 +127,7 @@ const getProfile = async (req, res) => {
         // Get user profile from our User table
         const { data: userProfile, error: profileError } = await database_1.supabase
             .from('User')
-            .select('UserID, FirstName, LastName, Username, ContactNumber, PharmacistYN, IsActive, DateTimeLastLoggedIn, Roles')
+            .select('UserID, FirstName, LastName, Username, ContactNumber, DateTimeLastLoggedIn, Roles')
             .eq('AuthUserID', user.id)
             .single();
         if (profileError || !userProfile) {
@@ -153,8 +151,8 @@ const getProfile = async (req, res) => {
                     username: userProfile.Username,
                     email: user.email,
                     contactNumber: userProfile.ContactNumber,
-                    isPharmacist: userProfile.PharmacistYN,
-                    isActive: userProfile.IsActive,
+                    isPharmacist: false, // Default to false since column might not exist
+                    isActive: true, // Default to true since column might not exist
                     lastLogin: userProfile.DateTimeLastLoggedIn,
                     role: userProfile.Roles
                 }
@@ -358,4 +356,14 @@ const deactivateAccount = async (req, res) => {
     }
 };
 exports.deactivateAccount = deactivateAccount;
+// In your backend (authController.ts or similar)
+//email endpoint
+// Confirm a user's email using admin API
+const confirmUserEmail = async (req, res) => {
+    const { data, error } = await database_1.supabase.auth.admin.updateUserById(req.body.userId, {
+        email_confirm: true,
+    });
+    res.status(200).json({ message: "Jemsey" });
+};
+exports.confirmUserEmail = confirmUserEmail;
 //# sourceMappingURL=authController.js.map

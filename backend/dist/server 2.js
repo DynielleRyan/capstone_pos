@@ -70,4 +70,4 @@ app.get('/api/test-db', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running http:${PORT}`);
 });
-//# sourceMappingURL=server.js.map
+//# sourceMappingURL=server%202.js.map

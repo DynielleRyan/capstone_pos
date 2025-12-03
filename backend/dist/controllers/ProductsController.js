@@ -5,26 +5,51 @@ const database_1 = require("../utils/database");
 const getAllProducts = async (req, res) => {
     try {
         const { data, error } = await database_1.supabase.from('Product').select('*');
-        if (error)
+        if (error) {
+            console.error('Supabase error fetching products:', error);
             throw error;
-        console.log('Product GET', data);
-        res.json(data);
+        }
+        console.log('Product GET - Success:', data?.length || 0, 'products');
+        res.json(data || []);
     }
     catch (error) {
-        res.status(500).json({ message: "Internal Server Error" });
+        console.error('Error in getAllProducts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch products',
+            error: error?.message || 'Unknown error',
+            details: error
+        });
     }
 };
 exports.getAllProducts = getAllProducts;
 const getProductById = async (req, res) => {
     try {
         const id = req.params.id;
-        const { data, error } = await database_1.supabase.from('Product').select('*').eq('ProductID', id);
-        if (error)
+        const { data, error } = await database_1.supabase
+            .from('Product')
+            .select('*')
+            .eq('ProductID', id);
+        if (error) {
+            console.error('Supabase error fetching product:', error);
             throw error;
+        }
+        if (!data || data.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found'
+            });
+        }
         res.json(data[0]);
     }
     catch (error) {
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error('Error in getProductById:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch product',
+            error: error?.message || 'Unknown error',
+            details: error
+        });
     }
 };
 exports.getProductById = getProductById;
