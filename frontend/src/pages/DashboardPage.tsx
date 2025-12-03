@@ -14,7 +14,8 @@ import {
   ShoppingBag,
   Heart,
   Baby,
-  User 
+  User,
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
@@ -78,6 +79,7 @@ const DashboardPage = () => {
   const [isProcessing, setIsProcessing] = useState(false);          // Transaction processing state
   const [currentTime, setCurrentTime] = useState('');               // Current time display
   const [isSeniorPWDActive, setIsSeniorPWDActive] = useState(false); // Senior/PWD discount state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);  // Confirmation modal state
   
   // Receipt state
   const [showReceipt, setShowReceipt] = useState(false);
@@ -380,6 +382,35 @@ const DashboardPage = () => {
     const discount = calculateDiscount();
     const vat = (subtotal - discount) * 0.12;
     return subtotal - discount + vat;
+  };
+
+  // Show confirmation modal before processing transaction
+  const handleChargeClick = () => {
+    // Validate required fields before showing modal
+    if (!selectedPaymentMethod) {
+      toast.error('Please select a payment method');
+      return;
+    }
+    if (!referenceNumber.trim()) {
+      toast.error('Please enter a reference number from the payment device');
+      return;
+    }
+    if (selectedPaymentMethod === 'cash' && (!cashReceived || parseFloat(cashReceived) <= 0)) {
+      toast.error('Please enter the cash amount received');
+      return;
+    }
+    if (cartItems.length === 0) {
+      toast.error('Cart is empty');
+      return;
+    }
+    
+    setShowConfirmModal(true);
+  };
+
+  // Process transaction after confirmation
+  const handleConfirmTransaction = () => {
+    setShowConfirmModal(false);
+    handleCharge();
   };
 
   // Process transaction and send to backend API
@@ -929,7 +960,7 @@ const DashboardPage = () => {
 
           {/* Charge Button */}
           <button 
-            onClick={handleCharge}
+            onClick={handleChargeClick}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             disabled={
               !selectedPaymentMethod || 
@@ -943,6 +974,77 @@ const DashboardPage = () => {
           </button>
         </div>
       </div>
+      
+      {/* Transaction Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-800">Confirm Transaction</h2>
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div className="space-y-2">
+                <p className="text-gray-600">Are you sure you want to process this transaction?</p>
+                
+                {/* Transaction Summary */}
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Payment Method:</span>
+                    <span className="font-medium capitalize">{selectedPaymentMethod}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Reference No:</span>
+                    <span className="font-medium">{referenceNumber}</span>
+                  </div>
+                  {selectedPaymentMethod === 'cash' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Cash Received:</span>
+                        <span className="font-medium">₱{parseFloat(cashReceived || '0').toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Change:</span>
+                        <span className="font-medium">₱{calculateChange().toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 font-semibold">Total Amount:</span>
+                      <span className="font-bold text-lg text-blue-600">₱{calculateTotal().toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmTransaction}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Confirm Transaction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Receipt Modal */}
       {showReceipt && receiptData && (
