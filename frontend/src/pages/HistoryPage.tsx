@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
-  ChevronDown,
   ArrowLeft,
   CreditCard,
   Banknote,
@@ -529,16 +528,16 @@ const HistoryPage = () => {
                         {/* Discount */}
                         <div className="text-center">
                           <div className="text-gray-500">Discount</div>
-                          <div className={`font-medium ${item.DiscountAmount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                            {item.DiscountAmount > 0 ? `-₱${item.DiscountAmount.toFixed(2)}` : '₱0.00'}
+                          <div className={`font-medium ${(item.DiscountAmount ?? 0) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            {(item.DiscountAmount ?? 0) > 0 ? `-₱${(item.DiscountAmount ?? 0).toFixed(2)}` : '₱0.00'}
                           </div>
                         </div>
 
                         {/* VAT */}
                         <div className="text-center">
                           <div className="text-gray-500">VAT (12%)</div>
-                          <div className={`font-medium ${item.VATAmount > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
-                            {item.VATAmount > 0 ? `₱${item.VATAmount.toFixed(2)}` : '₱0.00'}
+                          <div className={`font-medium ${(item.VATAmount ?? 0) > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                            {(item.VATAmount ?? 0) > 0 ? `₱${(item.VATAmount ?? 0).toFixed(2)}` : '₱0.00'}
                           </div>
                         </div>
 
@@ -550,7 +549,7 @@ const HistoryPage = () => {
                       </div>
 
                       {/* Note for older transactions */}
-                      {item.VATAmount === 0 && item.DiscountAmount === 0 && (
+                      {(item.VATAmount ?? 0) === 0 && (item.DiscountAmount ?? 0) === 0 && (
                         <div className="text-center">
                           <p className="text-xs text-gray-500 italic">
                             * Detailed breakdown not available for this transaction
@@ -560,17 +559,17 @@ const HistoryPage = () => {
 
                       {/* Discount/VAT Status */}
                       <div className="flex justify-center space-x-4">
-                        {item.DiscountAmount > 0 && (
+                        {(item.DiscountAmount ?? 0) > 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             ✓ Discounted
                           </span>
                         )}
-                        {item.VATAmount > 0 && (
+                        {(item.VATAmount ?? 0) > 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             VAT Applied
                           </span>
                         )}
-                        {item.DiscountAmount === 0 && item.VATAmount === 0 && (
+                        {(item.DiscountAmount ?? 0) === 0 && (item.VATAmount ?? 0) === 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                             No Discount/VAT
                           </span>

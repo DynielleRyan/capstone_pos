@@ -24,8 +24,7 @@ const OrderItem: React.FC<OrderItemProps> = ({
   price, 
   discount,
   stock,
-  onQuantityChange,
-  onRemove 
+  onQuantityChange
 }) => {
   const availableStock = stock || 0;
   
