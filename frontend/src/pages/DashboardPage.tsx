@@ -15,8 +15,7 @@ import {
   Heart,
   Baby,
   User,
-  X,
-  Trash2
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
