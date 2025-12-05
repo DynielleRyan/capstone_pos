@@ -15,7 +15,8 @@ import {
   Heart,
   Baby,
   User,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
@@ -310,6 +311,12 @@ const DashboardPage = () => {
         );
       }
     }
+  };
+
+  // Add a removeItem function (you can add this near the updateQuantity function)
+  const removeItem = (id: string) => {
+    setCartItems(prev => prev.filter(item => item.id !== id));
+    toast.success('Item removed from cart');
   };
 
   // Clear entire cart with user confirmation
@@ -823,6 +830,7 @@ const DashboardPage = () => {
                   price={`₱${item.price.toFixed(2)}`}
                   stock={item.stock}
                   onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
+                  onRemove={() => removeItem(item.id)}
                 />
               ))
             )}
