@@ -1,6 +1,6 @@
 import React from 'react';
 import QuantityControls from './QuantityControls';
-import { X, Trash2 } from 'lucide-react'; // Add Trash2 icon
+import { Trash2 } from 'lucide-react'; // Remove X, only Trash2 is used
 
 // Props interface for OrderItem component
 interface OrderItemProps {
