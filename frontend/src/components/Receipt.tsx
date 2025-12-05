@@ -65,7 +65,8 @@ const Receipt: React.FC<ReceiptProps> = ({
 
   const handlePrint = () => {
     // Create a new window with just the receipt content for printing
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    // PT-210 thermal printer: 48mm width
+    const printWindow = window.open('', '_blank', 'width=200,height=600');
     
     if (!printWindow) {
       // If popup blocked, fall back to regular print
@@ -81,17 +82,27 @@ const Receipt: React.FC<ReceiptProps> = ({
         <head>
           <title>Receipt - ${referenceNo}</title>
           <style>
-            /* Use Letter size (standard) but content is exactly 80mm wide */
+            /* PT-210 Thermal Printer: 48mm width */
             @page {
-              size: Letter;
+              size: 48mm auto;
               margin: 0;
             }
             
-            /* For thermal printers - try to use custom size if supported */
+            /* For thermal printers - custom size */
             @media print {
               @page {
-                size: 80mm auto;
+                size: 48mm auto;
                 margin: 0;
+              }
+              
+              body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+              
+              .receipt-wrapper {
+                page-break-inside: avoid;
+                break-inside: avoid;
               }
             }
             
@@ -110,8 +121,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             
             body {
               font-family: 'Courier New', monospace;
-              font-size: 9pt;
-              line-height: 1.2;
+              font-size: 7pt;
+              line-height: 1.1;
               color: #000;
               background: white;
               padding: 0 !important;
@@ -121,75 +132,74 @@ const Receipt: React.FC<ReceiptProps> = ({
               align-items: flex-start;
             }
             
-            /* Receipt container - exactly 80mm wide (3 inches = 80mm) */
+            /* Receipt container - exactly 48mm wide for PT-210 */
             .receipt-wrapper {
-              width: 80mm;
-              max-width: 80mm;
-              min-width: 80mm;
+              width: 48mm;
+              max-width: 48mm;
+              min-width: 48mm;
               margin: 0 auto;
-              padding: 2mm 1mm;
+              padding: 1mm 0.5mm;
               background: white;
             }
             
             .header {
               text-align: center;
-              margin-bottom: 3px;
+              margin-bottom: 2px;
             }
             
             .header h1 {
-              font-size: 11pt;
+              font-size: 9pt;
               font-weight: bold;
               margin-bottom: 1px;
               line-height: 1.1;
             }
             
             .header p {
-              font-size: 7pt;
+              font-size: 6pt;
               margin: 0;
               line-height: 1.1;
             }
             
             .divider {
               border-top: 1px dashed #666;
-              margin: 3px 0;
+              margin: 2px 0;
             }
             
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin: 1px 0;
-              font-size: 8pt;
-              line-height: 1.2;
+              margin: 0.5px 0;
+              font-size: 6pt;
+              line-height: 1.1;
             }
             
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 3px 0;
-              font-size: 8pt;
+              margin: 2px 0;
+              font-size: 6pt;
               table-layout: fixed;
             }
             
             th:first-child, td:first-child {
-              width: 40%;
+              width: 55%;
               word-wrap: break-word;
               overflow-wrap: break-word;
+              padding-right: 1px;
             }
             
             th:nth-child(2), td:nth-child(2) {
-              width: 12%;
+              width: 15%;
+              text-align: center;
             }
             
             th:nth-child(3), td:nth-child(3) {
-              width: 24%;
-            }
-            
-            th:nth-child(4), td:nth-child(4) {
-              width: 24%;
+              width: 30%;
+              text-align: right;
             }
             
             th, td {
-              padding: 1px 0.5px;
+              padding: 0.5px 0.5px;
               text-align: left;
               line-height: 1.1;
               vertical-align: top;
@@ -198,12 +208,12 @@ const Receipt: React.FC<ReceiptProps> = ({
             th {
               border-bottom: 1px solid #333;
               font-weight: bold;
-              font-size: 8pt;
+              font-size: 6pt;
             }
             
             td {
               border-bottom: 1px solid #ddd;
-              font-size: 8pt;
+              font-size: 6pt;
             }
             
             .text-right {
@@ -215,34 +225,34 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             .totals {
-              margin: 3px 0;
+              margin: 2px 0;
             }
             
             .total-row {
               display: flex;
               justify-content: space-between;
-              margin: 1px 0;
-              font-size: 8pt;
-              line-height: 1.2;
+              margin: 0.5px 0;
+              font-size: 6pt;
+              line-height: 1.1;
             }
             
             .total-final {
               border-top: 1px solid #333;
-              padding-top: 2px;
-              margin-top: 2px;
-              font-size: 11pt;
+              padding-top: 1px;
+              margin-top: 1px;
+              font-size: 9pt;
               font-weight: bold;
             }
             
             .footer {
               text-align: center;
-              margin-top: 3px;
-              font-size: 7pt;
-              line-height: 1.2;
+              margin-top: 2px;
+              font-size: 6pt;
+              line-height: 1.1;
             }
             
             small {
-              font-size: 7pt;
+              font-size: 5pt;
             }
           </style>
         </head>
@@ -255,19 +265,19 @@ const Receipt: React.FC<ReceiptProps> = ({
             </div>
             <div class="divider"></div>
             <div class="info-row">
-              <span>Receipt No:</span>
+              <span>Receipt:</span>
               <span><strong>${referenceNo}</strong></span>
             </div>
             <div class="info-row">
-              <span>Transaction ID:</span>
-              <span><strong>${transactionId}</strong></span>
+              <span>Txn ID:</span>
+              <span><strong>${transactionId.substring(0, 8)}...</strong></span>
             </div>
             <div class="info-row">
-              <span>Date & Time:</span>
+              <span>Date/Time:</span>
               <span><strong>${formatDate(orderDateTime)}</strong></span>
             </div>
             <div class="info-row">
-              <span>Payment Method:</span>
+              <span>Payment:</span>
               <span><strong>${formatPaymentMethod(paymentMethod)}</strong></span>
             </div>
             <div class="divider"></div>
@@ -276,19 +286,17 @@ const Receipt: React.FC<ReceiptProps> = ({
                 <tr>
                   <th>Item</th>
                   <th class="text-center">Qty</th>
-                  <th class="text-right">Price</th>
                   <th class="text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 ${items.map(item => `
                   <tr>
-                    <td>
+                    <td style="word-break: break-word;">
                       ${item.productName}
-                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Discount: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
+                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Disc: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
                     </td>
                     <td class="text-center">${item.quantity}</td>
-                    <td class="text-right">₱${item.unitPrice.toFixed(2)}</td>
                     <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
                   </tr>
                 `).join('')}
@@ -302,7 +310,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${isSeniorPWDActive && discount > 0 ? `
               <div class="total-row" style="color: red;">
-                <span>Senior/PWD Discount (20%):</span>
+                <span>Senior/PWD Disc (20%):</span>
                 <span>-₱${discount.toFixed(2)}</span>
               </div>
               ` : ''}
@@ -312,7 +320,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${paymentMethod === 'cash' && cashReceived ? `
               <div class="total-row">
-                <span>Cash Received:</span>
+                <span>Cash:</span>
                 <span>₱${cashReceived.toFixed(2)}</span>
               </div>
               ${change !== undefined && change > 0 ? `
@@ -330,8 +338,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             <div class="divider"></div>
             <div class="footer">
               <p>Thank you for your purchase!</p>
-              <p>Please keep this receipt for your records.</p>
-              <p style="margin-top: 5px;">This is a computer-generated receipt.</p>
+              <p>Keep this receipt for records.</p>
+              <p style="margin-top: 2px;">Computer-generated receipt.</p>
             </div>
           </div>
         </body>
