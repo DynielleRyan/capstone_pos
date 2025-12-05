@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Lock, Mail, Eye, EyeOff } from 'lucide-react';
-import { auth, supabase } from '../services/supabase';
+import { auth } from '../services/supabase';
 import api from '../services/api';
 
 const LoginPage = () => {

@@ -242,17 +242,25 @@ export const getAllTransactions = async (req: Request, res: Response) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = (page - 1) * limit;
 
-        // Get total count for pagination metadata
-        const { count, error: countError } = await supabase
-            .from('Transaction')
-            .select('*', { count: 'exact', head: true });
+        // Get accurate count: count distinct transactions that have items
+        // This matches the filter used in the data query (Transaction_Item!inner)
+        // We query Transaction_Item to get all TransactionIDs, then count distinct ones
+        const { data: transactionItems, error: countError } = await supabase
+            .from('Transaction_Item')
+            .select('TransactionID');
 
+        let totalCount = 0;
         if (countError) {
-            console.error('Error counting transactions:', countError);
+            console.error('Error counting transactions with items:', countError);
+        } else if (transactionItems) {
+            // Count distinct TransactionIDs
+            const distinctTransactionIds = new Set(transactionItems.map(item => item.TransactionID));
+            totalCount = distinctTransactionIds.size;
         }
 
         // Fetch transactions with minimal item data (only first item for preview, no images)
         // This significantly reduces payload size
+        // Note: Using Transaction_Item!inner filters to only transactions with items
         const { data, error } = await supabase
             .from('Transaction')
             .select(`
@@ -275,8 +283,7 @@ export const getAllTransactions = async (req: Request, res: Response) => {
                 )
             `)
             .order('OrderDateTime', { ascending: false })
-            .range(offset, offset + limit - 1)
-            .limit(limit);
+            .range(offset, offset + limit - 1);
 
         if (error) throw error;
 
@@ -307,9 +314,9 @@ export const getAllTransactions = async (req: Request, res: Response) => {
             pagination: {
                 page,
                 limit,
-                total: count || 0,
-                totalPages: Math.ceil((count || 0) / limit),
-                hasMore: offset + limit < (count || 0)
+                total: totalCount || 0,
+                totalPages: Math.ceil((totalCount || 0) / limit),
+                hasMore: offset + limit < (totalCount || 0)
             }
         });
     } catch (error) {
