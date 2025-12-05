@@ -1,5 +1,6 @@
 import React from 'react';
 import QuantityControls from './QuantityControls';
+import { X, Trash2 } from 'lucide-react'; // Add Trash2 icon
 
 // Props interface for OrderItem component
 interface OrderItemProps {
@@ -24,14 +25,15 @@ const OrderItem: React.FC<OrderItemProps> = ({
   price, 
   discount,
   stock,
-  onQuantityChange
+  onQuantityChange,
+  onRemove  // Add this to destructuring
 }) => {
   const availableStock = stock || 0;
   
   return (
-    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg relative">
       {/* Product image */}
-      <div className="w-12 h-12 bg-gray-200 rounded">
+      <div className="w-12 h-12 bg-gray-200 rounded flex-shrink-0">
         {product.image ? (
           <img src={product.image} alt={product.name} className="w-full h-full object-cover rounded" />
         ) : (
@@ -40,9 +42,9 @@ const OrderItem: React.FC<OrderItemProps> = ({
       </div>
       
       {/* Product details */}
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         {/* Product name */}
-        <h4 className="font-medium text-sm text-gray-800">{product.name}</h4>
+        <h4 className="font-medium text-sm text-gray-800 truncate">{product.name}</h4>
         
         {/* Applied discounts */}
         {product.discounts && product.discounts.length > 0 && (
@@ -67,6 +69,18 @@ const OrderItem: React.FC<OrderItemProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Delete button */}
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          className="flex-shrink-0 p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          title="Remove from cart"
+          aria-label="Remove item from cart"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 };

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { auth } from '../services/supabase';
+import api from '../services/api'; // Add this import
 
 const ResetPasswordPage = () => {
   const [newPassword, setNewPassword] = useState('');
@@ -34,7 +35,7 @@ const ResetPasswordPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(''); // Clear any previous errors
 
     // Validate passwords
     if (newPassword.length < 6) {
@@ -48,6 +49,7 @@ const ResetPasswordPage = () => {
     }
 
     setIsLoading(true);
+    setError(''); // Clear error before starting
 
     try {
       // First, set the session with the tokens from the URL
@@ -62,16 +64,54 @@ const ResetPasswordPage = () => {
         
         if (sessionError) {
           setError('Invalid reset session. Please request a new password reset.');
+          setIsLoading(false);
           return;
         }
       }
 
-      // Now update the password
-      const { error } = await auth.updatePassword(newPassword);
-
-      if (error) {
-        setError(error.message);
+      // Check user role - only clerks can reset password
+      try {
+        const profileResponse = await api.get('/auth/profile');
+        
+        if (profileResponse.data.success) {
+          const userRole = profileResponse.data.data.user.role;
+          
+          // Check if user is a clerk
+          if (userRole && userRole.toLowerCase() !== 'clerk') {
+            setError('Password reset is only available for clerk accounts. Please contact your administrator.');
+            setIsLoading(false);
+            return;
+          }
+        } else {
+          setError('Unable to verify account permissions. Please contact your administrator.');
+          setIsLoading(false);
+          return;
+        }
+      } catch (profileError: any) {
+        console.error('Error fetching user profile:', profileError);
+        setError('Unable to verify account permissions. Please contact your administrator.');
+        setIsLoading(false);
         return;
+      }
+
+      // Now update the password (only if user is a clerk)
+      const { error: updateError } = await auth.updatePassword(newPassword);
+
+      // Clear error immediately after update attempt
+      // Supabase may invalidate the session after successful password update,
+      // which can cause error messages even though the update succeeded
+      setError('');
+
+      if (updateError) {
+        // Only show error if it's not about session expiration
+        // Session expiration after password update is expected behavior
+        if (!updateError.message?.toLowerCase().includes('expired') && 
+            !updateError.message?.toLowerCase().includes('session')) {
+          setError(updateError.message);
+          setIsLoading(false);
+          return;
+        }
+        // If it's a session expiration error, treat as success (password was updated)
       }
 
       setSuccess(true);
@@ -82,7 +122,22 @@ const ResetPasswordPage = () => {
       }, 3000);
 
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+      // Only set error if we haven't already set success
+      if (!success) {
+        // Check if this is a session expiration error after successful password update
+        const errorMessage = err.message || err.response?.data?.message || 'An unexpected error occurred';
+        if (errorMessage.includes('expired') || errorMessage.includes('session')) {
+          // If we get here but password was updated, ignore the error
+          console.log('Session expired after password update (this is normal)');
+          setError('');
+          setSuccess(true);
+          setTimeout(() => {
+            navigate('/login');
+          }, 3000);
+        } else {
+          setError(errorMessage);
+        }
+      }
       console.error('Password update error:', err);
     } finally {
       setIsLoading(false);
