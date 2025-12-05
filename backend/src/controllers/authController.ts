@@ -467,7 +467,7 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
                         const { data: authUser } = await supabase.auth.admin.getUserById(user.AuthUserID);
                         if (authUser?.user?.email?.toLowerCase() === username.toLowerCase()) {
                             userRecord = user;
-                            console.log('Found user by email:', authUser.user.email);
+                            console.log('Found user by email:', authUser.user?.email);
                             break;
                         }
                     } catch (err) {
@@ -546,7 +546,7 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
         // Get the user's email from Supabase Auth using admin API
         const { data: authUser, error: authUserError } = await supabase.auth.admin.getUserById(userRecord.AuthUserID);
 
-        if (authUserError || !authUser?.user?.email) {
+        if (authUserError || !authUser?.user || !authUser.user.email) {
             console.log('Error getting auth user:', {
                 error: authUserError,
                 authUserID: userRecord.AuthUserID,
@@ -559,7 +559,9 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
             });
         }
 
-        console.log('Auth user email found:', authUser.user.email);
+        // At this point, we know authUser.user and authUser.user.email are not null
+        const userEmail = authUser.user.email;
+        console.log('Auth user email found:', userEmail);
 
         // Create a completely isolated client instance for verification
         // This prevents any interference with existing sessions
@@ -580,9 +582,9 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
         });
 
         // Verify password by attempting to sign in with isolated client
-        console.log('Attempting password verification for email:', authUser.user.email);
+        console.log('Attempting password verification for email:', userEmail);
         const { data: signInData, error: signInError } = await isolatedClient.auth.signInWithPassword({
-            email: authUser.user.email,
+            email: userEmail,
             password: password
         });
 
@@ -591,7 +593,7 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
                 message: signInError?.message,
                 status: signInError?.status,
                 name: signInError?.name,
-                email: authUser.user.email
+                email: userEmail
             });
             
             // Provide more specific error message
