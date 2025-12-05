@@ -121,8 +121,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             
             body {
               font-family: 'Courier New', monospace;
-              font-size: 7pt;
-              line-height: 1.1;
+              font-size: 9pt;
+              line-height: 1.4;
               color: #000;
               background: white;
               padding: 0 !important;
@@ -138,46 +138,46 @@ const Receipt: React.FC<ReceiptProps> = ({
               max-width: 48mm;
               min-width: 48mm;
               margin: 0 auto;
-              padding: 1mm 0.5mm;
+              padding: 3mm 2mm;
               background: white;
             }
             
             .header {
               text-align: center;
-              margin-bottom: 2px;
+              margin-bottom: 5px;
             }
             
             .header h1 {
-              font-size: 9pt;
+              font-size: 11pt;
               font-weight: bold;
-              margin-bottom: 1px;
-              line-height: 1.1;
+              margin-bottom: 3px;
+              line-height: 1.3;
             }
             
             .header p {
-              font-size: 6pt;
-              margin: 0;
-              line-height: 1.1;
+              font-size: 8pt;
+              margin: 2px 0;
+              line-height: 1.3;
             }
             
             .divider {
               border-top: 1px dashed #666;
-              margin: 2px 0;
+              margin: 5px 0;
             }
             
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin: 0.5px 0;
-              font-size: 6pt;
-              line-height: 1.1;
+              margin: 3px 0;
+              font-size: 8pt;
+              line-height: 1.4;
             }
             
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 2px 0;
-              font-size: 6pt;
+              margin: 5px 0;
+              font-size: 8pt;
               table-layout: fixed;
             }
             
@@ -185,7 +185,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               width: 55%;
               word-wrap: break-word;
               overflow-wrap: break-word;
-              padding-right: 1px;
+              padding-right: 2px;
             }
             
             th:nth-child(2), td:nth-child(2) {
@@ -199,21 +199,24 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             th, td {
-              padding: 0.5px 0.5px;
+              padding: 3px 2px;
               text-align: left;
-              line-height: 1.1;
+              line-height: 1.4;
               vertical-align: top;
             }
             
             th {
               border-bottom: 1px solid #333;
               font-weight: bold;
-              font-size: 6pt;
+              font-size: 8pt;
+              padding-bottom: 4px;
             }
             
             td {
               border-bottom: 1px solid #ddd;
-              font-size: 6pt;
+              font-size: 8pt;
+              padding-top: 4px;
+              padding-bottom: 4px;
             }
             
             .text-right {
@@ -225,34 +228,34 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             .totals {
-              margin: 2px 0;
+              margin: 5px 0;
             }
             
             .total-row {
               display: flex;
               justify-content: space-between;
-              margin: 0.5px 0;
-              font-size: 6pt;
-              line-height: 1.1;
+              margin: 4px 0;
+              font-size: 8pt;
+              line-height: 1.4;
             }
             
             .total-final {
-              border-top: 1px solid #333;
-              padding-top: 1px;
-              margin-top: 1px;
-              font-size: 9pt;
+              border-top: 2px solid #333;
+              padding-top: 5px;
+              margin-top: 5px;
+              font-size: 11pt;
               font-weight: bold;
             }
             
             .footer {
               text-align: center;
-              margin-top: 2px;
-              font-size: 6pt;
-              line-height: 1.1;
+              margin-top: 8px;
+              font-size: 7pt;
+              line-height: 1.4;
             }
             
             small {
-              font-size: 5pt;
+              font-size: 7pt;
             }
           </style>
         </head>
@@ -265,19 +268,19 @@ const Receipt: React.FC<ReceiptProps> = ({
             </div>
             <div class="divider"></div>
             <div class="info-row">
-              <span>Receipt:</span>
+              <span>Receipt No:</span>
               <span><strong>${referenceNo}</strong></span>
             </div>
             <div class="info-row">
-              <span>Txn ID:</span>
-              <span><strong>${transactionId.substring(0, 8)}...</strong></span>
+              <span>Transaction ID:</span>
+              <span><strong>${transactionId}</strong></span>
             </div>
             <div class="info-row">
-              <span>Date/Time:</span>
+              <span>Date & Time:</span>
               <span><strong>${formatDate(orderDateTime)}</strong></span>
             </div>
             <div class="info-row">
-              <span>Payment:</span>
+              <span>Payment Method:</span>
               <span><strong>${formatPaymentMethod(paymentMethod)}</strong></span>
             </div>
             <div class="divider"></div>
@@ -294,7 +297,7 @@ const Receipt: React.FC<ReceiptProps> = ({
                   <tr>
                     <td style="word-break: break-word;">
                       ${item.productName}
-                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Disc: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
+                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Discount: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
                     </td>
                     <td class="text-center">${item.quantity}</td>
                     <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
@@ -310,7 +313,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${isSeniorPWDActive && discount > 0 ? `
               <div class="total-row" style="color: red;">
-                <span>Senior/PWD Disc (20%):</span>
+                <span>Senior/PWD Discount (20%):</span>
                 <span>-₱${discount.toFixed(2)}</span>
               </div>
               ` : ''}
@@ -320,7 +323,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${paymentMethod === 'cash' && cashReceived ? `
               <div class="total-row">
-                <span>Cash:</span>
+                <span>Cash Received:</span>
                 <span>₱${cashReceived.toFixed(2)}</span>
               </div>
               ${change !== undefined && change > 0 ? `
@@ -338,8 +341,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             <div class="divider"></div>
             <div class="footer">
               <p>Thank you for your purchase!</p>
-              <p>Keep this receipt for records.</p>
-              <p style="margin-top: 2px;">Computer-generated receipt.</p>
+              <p>Please keep this receipt for your records.</p>
+              <p style="margin-top: 5px;">This is a computer-generated receipt.</p>
             </div>
           </div>
         </body>

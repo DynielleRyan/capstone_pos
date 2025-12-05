@@ -10,6 +10,7 @@ export const createTransaction = async (req: Request, res: Response) => {
             paymentMethod,      // Payment method (cash, gcash, maya)
             subtotal,          // Subtotal before discounts
             isSeniorPWDActive, // Senior/PWD discount flag
+            seniorPWDID,       // PWD ID or Senior Citizen ID
             cashReceived,      // Cash amount received (for cash payments)
             change,            // Change amount (for cash payments)
             userId,            // User ID from frontend
@@ -106,6 +107,7 @@ export const createTransaction = async (req: Request, res: Response) => {
             PaymentChange: change,
             VATAmount: vatAmount,      // Backend calculated
             UserID: finalUserId,
+            SeniorPWDID: isSeniorPWDActive && seniorPWDID ? seniorPWDID : null, // Store PWD/Senior ID if provided
             OrderDateTime: new Date().toLocaleString('sv-SE', { 
                 timeZone: 'Asia/Manila'
             }).replace(' ', 'T') + '+08:00'
@@ -232,27 +234,84 @@ for (const item of items) {
     }
 };
 
-// Get all transactions with their items and product details
+// Get all transactions with pagination and optimized queries
 export const getAllTransactions = async (req: Request, res: Response) => {
     try {
-        // Fetch transactions with related data using Supabase joins
+        // Pagination parameters
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = (page - 1) * limit;
+
+        // Get total count for pagination metadata
+        const { count, error: countError } = await supabase
+            .from('Transaction')
+            .select('*', { count: 'exact', head: true });
+
+        if (countError) {
+            console.error('Error counting transactions:', countError);
+        }
+
+        // Fetch transactions with minimal item data (only first item for preview, no images)
+        // This significantly reduces payload size
         const { data, error } = await supabase
             .from('Transaction')
             .select(`
-                *,
-                Transaction_Item (
-                    *,
+                TransactionID,
+                ReferenceNo,
+                PaymentMethod,
+                Total,
+                OrderDateTime,
+                CashReceived,
+                PaymentChange,
+                SeniorPWDID,
+                VATAmount,
+                Transaction_Item!inner (
+                    Quantity,
+                    UnitPrice,
+                    Subtotal,
                     Product (
-                        Name,
-                        Image
+                        Name
                     )
                 )
             `)
-            .order('OrderDateTime', { ascending: false }); // Most recent first
+            .order('OrderDateTime', { ascending: false })
+            .range(offset, offset + limit - 1)
+            .limit(limit);
 
         if (error) throw error;
 
-        res.json(data);
+        // Transform to include only first item for preview (reduces payload)
+        const transformedData = data.map((transaction: any) => {
+            const items = transaction.Transaction_Item || [];
+            return {
+                TransactionID: transaction.TransactionID,
+                ReferenceNo: transaction.ReferenceNo,
+                PaymentMethod: transaction.PaymentMethod,
+                Total: transaction.Total,
+                OrderDateTime: transaction.OrderDateTime,
+                CashReceived: transaction.CashReceived,
+                PaymentChange: transaction.PaymentChange,
+                SeniorPWDID: transaction.SeniorPWDID,
+                VATAmount: transaction.VATAmount,
+                // Only include first item for preview
+                Transaction_Item: items.slice(0, 1),
+                // Include item count for UI
+                ItemCount: items.length
+            };
+        });
+
+        // Return paginated response with metadata
+        res.json({
+            success: true,
+            data: transformedData,
+            pagination: {
+                page,
+                limit,
+                total: count || 0,
+                totalPages: Math.ceil((count || 0) / limit),
+                hasMore: offset + limit < (count || 0)
+            }
+        });
     } catch (error) {
         console.error('Error fetching transactions:', error);
         res.status(500).json({

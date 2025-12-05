@@ -1,28 +1,38 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Lock, Mail, Eye, EyeOff } from 'lucide-react';
-import { auth } from '../services/supabase';
+import { auth, supabase } from '../services/supabase';
+import api from '../services/api';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
+  
+  // OTP states for first-time login
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
+  const [tempSession, setTempSession] = useState<any>(null);
+  
   const navigate = useNavigate();
 
-  // Check if user is already logged in
+  // Debug: Log when modal state changes
   useEffect(() => {
-    const checkSession = async () => {
-      const { session } = await auth.getSession();
-      if (session) {
-        navigate('/dashboard');
-      }
-    };
-    checkSession();
-  }, [navigate]);
+    console.log('OTP Modal state changed:', showOTPModal);
+    if (showOTPModal) {
+      console.log('OTP Modal should be visible now. showOTPModal =', showOTPModal);
+    }
+  }, [showOTPModal]);
+
+  // Note: Session check is handled by PublicRoute component in App.tsx
+  // No need to check here to avoid redirect loops
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,22 +44,161 @@ const LoginPage = () => {
     console.log('Supabase Anon Key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
 
     try {
-      const { data, error } = await auth.signIn(email, password);
+      const { data, error } = await auth.signIn(email, password, rememberMe);
 
       if (error) {
         setError(error.message);
         return;
       }
 
-      if (data.user) {
-        // Redirect to dashboard on successful login
-        navigate('/dashboard');
+      if (data.user && data.session) {
+        // Store session temporarily (don't set in Supabase yet to prevent auto-redirect)
+        setTempSession(data.session);
+        
+        // Use session token directly for API calls (temporary)
+        const originalGetSession = supabase.auth.getSession;
+        
+        // Check if this is first-time login by calling backend
+        // Temporarily set session for API calls, but we'll handle redirect manually
+        await auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+
+        // Check if this is first-time login by calling backend
+        try {
+          console.log('Checking first login status...');
+          const response = await api.post('/auth/check-first-login');
+          console.log('First login check response:', response.data);
+          
+          if (response.data.success && response.data.data?.requiresOTP) {
+            console.log('First-time login detected - sending OTP...');
+            // First-time login - send OTP and show modal
+            try {
+              const otpResponse = await api.post('/auth/send-otp');
+              console.log('OTP sent response:', otpResponse.data);
+              
+              // Store session and show modal BEFORE signing out
+              setTempSession(data.session);
+              setIsLoading(false);
+              
+              // Set flag in sessionStorage to prevent PublicRoute redirect
+              sessionStorage.setItem('otpVerification', 'true');
+              
+              // Set modal to show
+              console.log('Setting OTP modal to show...');
+              setShowOTPModal(true);
+              setIsLoading(false);
+              console.log('OTP modal state set. showOTPModal should be true now.');
+              
+              return;
+            } catch (otpError: any) {
+              console.error('Error sending OTP:', otpError);
+              setError('Failed to send verification code. Please try again.');
+              setTempSession(null);
+              await auth.signOut();
+            }
+          } else {
+            console.log('Not a first-time login, proceeding normally');
+            // Normal login - navigate to dashboard
+            navigate('/dashboard');
+          }
+        } catch (checkError: any) {
+          console.error('Error checking first login:', checkError);
+          console.error('Error details:', {
+            message: checkError.message,
+            response: checkError.response?.data,
+            status: checkError.response?.status
+          });
+          // If check fails, proceed with normal login
+          navigate('/dashboard');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred');
       console.error('Login error:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (otp.length !== 6) {
+      setOtpError('Please enter a 6-digit code');
+      return;
+    }
+
+    if (!tempSession) {
+      setOtpError('Session expired. Please log in again.');
+      return;
+    }
+
+    setIsVerifyingOTP(true);
+    setOtpError('');
+
+    try {
+      // Set session temporarily for API call
+      await auth.setSession({
+        access_token: tempSession.access_token,
+        refresh_token: tempSession.refresh_token
+      });
+
+      const response = await api.post('/auth/verify-otp', { otp });
+
+      if (response.data.success) {
+        // OTP verified - clear OTP flag and navigate
+        sessionStorage.removeItem('otpVerification');
+        setShowOTPModal(false);
+        setOtp('');
+        setTempSession(null);
+        navigate('/dashboard');
+      } else {
+        setOtpError(response.data.message || 'Invalid verification code. Please try again.');
+        // Sign out again if verification failed
+        await auth.signOut();
+      }
+    } catch (err: any) {
+      setOtpError(err.response?.data?.message || 'Failed to verify code. Please try again.');
+      console.error('OTP verification error:', err);
+      // Sign out on error
+      await auth.signOut();
+    } finally {
+      setIsVerifyingOTP(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!tempSession) {
+      setOtpError('Session expired. Please log in again.');
+      return;
+    }
+
+    setOtpError('');
+    setIsVerifyingOTP(true);
+    try {
+      // Set session temporarily for API call
+      await auth.setSession({
+        access_token: tempSession.access_token,
+        refresh_token: tempSession.refresh_token
+      });
+
+      const response = await api.post('/auth/send-otp');
+      
+      if (response.data.success) {
+        alert('Verification code has been resent to your email.');
+        setOtp(''); // Clear current OTP input
+      } else {
+        setOtpError(response.data.message || 'Failed to resend code. Please try again.');
+      }
+      
+      // Sign out again to prevent redirect
+      await auth.signOut();
+    } catch (err: any) {
+      setOtpError(err.response?.data?.message || 'Failed to resend code. Please try again.');
+      console.error('Resend OTP error:', err);
+      await auth.signOut();
+    } finally {
+      setIsVerifyingOTP(false);
     }
   };
 
@@ -256,7 +405,17 @@ const LoginPage = () => {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </label>
-              <label className="label">
+              <div className="flex items-center justify-between">
+                <label className="label cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="checkbox checkbox-sm"
+                    style={{ accentColor: '#145DA0' }}
+                  />
+                  <span className="label-text ml-2">Remember me for 30 days</span>
+                </label>
                 <button
                   type="button"
                   onClick={() => setShowForgotPassword(true)}
@@ -265,7 +424,7 @@ const LoginPage = () => {
                 >
                   Forgot password?
                 </button>
-              </label>
+              </div>
             </div>
 
             <div className="form-control mt-6">
@@ -311,6 +470,88 @@ const LoginPage = () => {
           Pharmacy Point of Sale System © 2025
         </p>
       </div>
+
+      {/* OTP Verification Modal */}
+      {showOTPModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ zIndex: 9999 }}>
+          <div className="card w-full max-w-md bg-base-100 shadow-2xl m-4">
+            <div className="card-body">
+              <h2 className="card-title text-2xl mb-2">First-Time Login Verification</h2>
+              <p className="text-base-content/70 mb-4">
+                We've sent a verification code to <strong>{email}</strong>. Please enter the code below to complete your login.
+              </p>
+
+              {otpError && (
+                <div className="alert alert-error mb-4">
+                  <span>{otpError}</span>
+                </div>
+              )}
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium">Verification Code</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  placeholder="Enter 6-digit code"
+                  value={otp}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setOtp(value);
+                    setOtpError('');
+                  }}
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+
+              <div className="card-actions justify-end mt-4">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    sessionStorage.removeItem('otpVerification');
+                    setShowOTPModal(false);
+                    setOtp('');
+                    setOtpError('');
+                    setTempSession(null);
+                    auth.signOut();
+                  }}
+                  disabled={isVerifyingOTP}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn text-white"
+                  style={{ backgroundColor: '#145DA0' }}
+                  onClick={handleVerifyOTP}
+                  disabled={isVerifyingOTP || otp.length !== 6}
+                >
+                  {isVerifyingOTP ? (
+                    <>
+                      <span className="loading loading-spinner"></span>
+                      Verifying...
+                    </>
+                  ) : (
+                    'Verify'
+                  )}
+                </button>
+              </div>
+
+              <div className="text-center mt-4">
+                <button
+                  className="link text-sm"
+                  style={{ color: '#145DA0' }}
+                  onClick={handleResendOTP}
+                  disabled={isVerifyingOTP}
+                >
+                  Resend Code
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
