@@ -34,7 +34,10 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  return user ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+  // Don't redirect if user is in OTP verification mode
+  const isOTPVerification = sessionStorage.getItem('otpVerification') === 'true';
+  
+  return user && !isOTPVerification ? <Navigate to="/dashboard" replace /> : <>{children}</>;
 };
 
 function AppRoutes() {
@@ -79,7 +82,7 @@ function App() {
       <BrowserRouter>
         <AppRoutes />
         <Toaster 
-          position="top-right"
+          position="top-center"
           toastOptions={{
             duration: 3000,
             style: {

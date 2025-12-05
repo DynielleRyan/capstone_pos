@@ -56,11 +56,23 @@ export const auth = {
   },
 
   // Sign in existing user with email and password
-  signIn: async (email: string, password: string) => {
+  signIn: async (email: string, password: string, rememberMe: boolean = false) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
     });
+    
+    // If remember me is checked, set session to persist for 30 days
+    if (data.session && rememberMe) {
+      // Store remember me preference
+      localStorage.setItem('rememberMe', 'true');
+      localStorage.setItem('rememberMeExpiry', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    } else if (data.session) {
+      // Clear remember me if not checked
+      localStorage.removeItem('rememberMe');
+      localStorage.removeItem('rememberMeExpiry');
+    }
+    
     return { data, error };
   },
 

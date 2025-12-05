@@ -22,9 +22,30 @@ api.interceptors.request.use(
       if (session?.access_token) {
         // Add Bearer token to Authorization header
         config.headers.Authorization = `Bearer ${session.access_token}`;
+      } else {
+        // Only reject for truly protected endpoints that require authentication
+        // Verification endpoint should work even without session (though it's better with one)
+        const isProtectedEndpoint = config.url?.includes('/auth/profile') || 
+                                   config.url?.includes('/auth/update') ||
+                                   config.url?.includes('/auth/change-password') ||
+                                   config.url?.includes('/auth/deactivate');
+        
+        if (isProtectedEndpoint) {
+          console.warn('No session available for protected endpoint:', config.url);
+          return Promise.reject(new Error('No authentication session available'));
+        }
       }
     } catch (error) {
       console.error('Error getting session:', error);
+      // Only reject for truly protected endpoints
+      const isProtectedEndpoint = config.url?.includes('/auth/profile') || 
+                                 config.url?.includes('/auth/update') ||
+                                 config.url?.includes('/auth/change-password') ||
+                                 config.url?.includes('/auth/deactivate');
+      
+      if (isProtectedEndpoint) {
+        return Promise.reject(new Error('Failed to get authentication session'));
+      }
     }
     return config;
   },
@@ -34,13 +55,42 @@ api.interceptors.request.use(
 );
 
 // Response interceptor - handle authentication errors globally
+let isRedirecting = false; // Prevent multiple redirects
+let redirectTimeout: ReturnType<typeof setTimeout> | null = null; // Debounce redirects
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access - sign out and redirect to login
-      await supabase.auth.signOut();
-      window.location.href = '/login';
+    // Don't redirect on profile endpoint 401s - let the component handle it
+    const isProfileEndpoint = error.config?.url?.includes('/auth/profile');
+    // Don't redirect on verification endpoint 401s - these are expected for invalid credentials
+    const isVerificationEndpoint = error.config?.url?.includes('/auth/verify-pharmacist-admin');
+    
+    if (error.response?.status === 401 && !isRedirecting && !isProfileEndpoint && !isVerificationEndpoint) {
+      // Only redirect if we're not already on the login page
+      const currentPath = window.location.pathname;
+      if (!currentPath.includes('/login') && !currentPath.includes('/reset-password')) {
+        // Clear any pending redirect
+        if (redirectTimeout) {
+          clearTimeout(redirectTimeout);
+        }
+        
+        // Debounce redirect to prevent rapid successive redirects
+        redirectTimeout = setTimeout(async () => {
+          if (!isRedirecting) {
+            isRedirecting = true;
+            try {
+              await supabase.auth.signOut();
+              // Use replace to prevent back button issues
+              window.location.replace('/login');
+            } catch (err) {
+              console.error('Error during sign out:', err);
+              // Even if sign out fails, redirect to login
+              window.location.replace('/login');
+            }
+          }
+        }, 500); // 500ms debounce
+      }
     }
     return Promise.reject(error);
   }

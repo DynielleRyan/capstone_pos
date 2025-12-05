@@ -9,10 +9,13 @@ import {
   X,
   Calendar,
   Clock,
-  Receipt
+  Receipt as ReceiptIcon,
+  Printer
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import Receipt from '../components/Receipt';
+import toast from 'react-hot-toast';
 
 interface Transaction {
   TransactionID: string;
@@ -22,6 +25,7 @@ interface Transaction {
   OrderDateTime: string;
   Status: 'completed' | 'pending' | 'cancelled' | 'refunded';
   Items: TransactionItem[];
+  ItemCount?: number; // Total number of items (for lazy loading)
 }
 
 interface TransactionItem {
@@ -47,6 +51,25 @@ const HistoryPage = () => {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [itemsPerPage] = useState(50);
+  
+  // Lazy loading state for transaction items
+  const [loadedTransactionItems, setLoadedTransactionItems] = useState<Record<string, TransactionItem[]>>({});
+  
+  // Reprint receipt states
+  const [showReprintModal, setShowReprintModal] = useState(false);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [selectedTransactionForReprint, setSelectedTransactionForReprint] = useState<Transaction | null>(null);
+  const [verificationUsername, setVerificationUsername] = useState('');
+  const [verificationPassword, setVerificationPassword] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
 
   // Filter transactions based on search and filters
   useEffect(() => {
@@ -89,44 +112,92 @@ const HistoryPage = () => {
     setFilteredTransactions(filtered);
   }, [transactions, searchTerm, orderNo, selectedPaymentMethod, startDate, endDate]);
 
-  // Fetch transactions from API
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get(`/transactions?t=${Date.now()}`);
-        
-        // Transform the API response to match our interface
-        const transformedTransactions = response.data.map((transaction: any) => ({
-          TransactionID: transaction.TransactionID,
-          ReferenceNo: transaction.ReferenceNo,
-          PaymentMethod: transaction.PaymentMethod,
-          Total: transaction.Total,
-          OrderDateTime: transaction.OrderDateTime,
-          Status: 'completed', // Default status since our DB doesn't have this field yet
-          Items: transaction.Transaction_Item?.map((item: any) => ({
-            ProductName: item.Product?.Name || 'Unknown Product',
-            Quantity: item.Quantity,
-            UnitPrice: item.UnitPrice,
-            Subtotal: item.Subtotal,
-            VATAmount: item.VATAmount || 0,
-            DiscountAmount: item.DiscountAmount || 0,
-            Image: item.Product?.Image || 'https://via.placeholder.com/150x150/E5E7EB/6B7280?text=No+Image'
-          })) || []
-        }));
-        
-        setTransactions(transformedTransactions);
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
-        // Fallback to empty array if API fails
-        setTransactions([]);
-      } finally {
-        setLoading(false);
+  // Fetch transactions from API with pagination
+  const fetchTransactions = async (page: number = 1) => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/transactions?page=${page}&limit=${itemsPerPage}&t=${Date.now()}`);
+      
+      // Handle new paginated response structure
+      const responseData = response.data.success ? response.data : { data: response.data, pagination: null };
+      const transactionsData = responseData.data || [];
+      const pagination = responseData.pagination;
+      
+      // Transform the API response to match our interface
+      // Only include preview item (first item) - full items loaded lazily
+      const transformedTransactions = transactionsData.map((transaction: any) => ({
+        TransactionID: transaction.TransactionID,
+        ReferenceNo: transaction.ReferenceNo,
+        PaymentMethod: transaction.PaymentMethod,
+        Total: transaction.Total,
+        OrderDateTime: transaction.OrderDateTime,
+        Status: 'completed',
+        // Only include preview item (first item) for list view
+        Items: transaction.Transaction_Item?.slice(0, 1).map((item: any) => ({
+          ProductName: item.Product?.Name || 'Unknown Product',
+          Quantity: item.Quantity,
+          UnitPrice: item.UnitPrice,
+          Subtotal: item.Subtotal,
+          VATAmount: item.VATAmount || 0,
+          DiscountAmount: item.DiscountAmount || 0,
+          Image: undefined // No images in list view for performance
+        })) || [],
+        ItemCount: transaction.ItemCount || transaction.Transaction_Item?.length || 0
+      }));
+      
+      setTransactions(transformedTransactions);
+      
+      // Update pagination state
+      if (pagination) {
+        setTotalPages(pagination.totalPages || 1);
+        setTotalTransactions(pagination.total || 0);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchTransactions();
-  }, []);
+  // Fetch transactions on mount and when page changes
+  useEffect(() => {
+    fetchTransactions(currentPage);
+  }, [currentPage]);
+
+  // Lazy load full transaction items when viewing details
+  const loadTransactionItems = async (transactionId: string) => {
+    // Check if already loaded
+    if (loadedTransactionItems[transactionId]) {
+      return loadedTransactionItems[transactionId];
+    }
+
+    try {
+      const response = await api.get(`/transactions/${transactionId}`);
+      const transaction = response.data;
+      
+      const items = transaction.Transaction_Item?.map((item: any) => ({
+        ProductName: item.Product?.Name || 'Unknown Product',
+        Quantity: item.Quantity,
+        UnitPrice: item.UnitPrice,
+        Subtotal: item.Subtotal,
+        VATAmount: item.VATAmount || 0,
+        DiscountAmount: item.DiscountAmount || 0,
+        Image: item.Product?.Image || undefined
+      })) || [];
+
+      // Cache loaded items
+      setLoadedTransactionItems(prev => ({
+        ...prev,
+        [transactionId]: items
+      }));
+
+      return items;
+    } catch (error) {
+      console.error('Error loading transaction items:', error);
+      return [];
+    }
+  };
 
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('en-US', {
@@ -164,14 +235,212 @@ const HistoryPage = () => {
     }
   };
 
-  const openTransactionModal = (transaction: Transaction) => {
-    setSelectedTransaction(transaction);
+  const openTransactionModal = async (transaction: Transaction) => {
+    // Load full transaction items if not already loaded
+    let fullItems = transaction.Items;
+    if (transaction.ItemCount > 1 && !loadedTransactionItems[transaction.TransactionID]) {
+      const items = await loadTransactionItems(transaction.TransactionID);
+      fullItems = items;
+      
+      // Update transaction with full items
+      setTransactions(prev => prev.map(t => 
+        t.TransactionID === transaction.TransactionID 
+          ? { ...t, Items: items }
+          : t
+      ));
+    } else if (loadedTransactionItems[transaction.TransactionID]) {
+      fullItems = loadedTransactionItems[transaction.TransactionID];
+    }
+
+    setSelectedTransaction({
+      ...transaction,
+      Items: fullItems
+    });
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setSelectedTransaction(null);
+  };
+
+  // Check user role - be strict about role checking
+  const userRole = profile?.role ? String(profile.role).trim().toLowerCase() : '';
+  const isClerk = userRole === 'clerk';
+  const isPharmacistOrAdmin = userRole === 'pharmacist' || userRole === 'admin';
+  
+  // If profile is not loaded yet, deny access (safety first)
+  const isRoleUnknown = !profile || !profile.role;
+
+  // Handle reprint receipt
+  const handleReprintReceipt = (transaction: Transaction) => {
+    // Debug: log role information
+    console.log('Reprint attempt - Role check:', {
+      role: profile?.role,
+      roleLower: userRole,
+      isClerk,
+      isPharmacistOrAdmin,
+      isRoleUnknown,
+      profile: profile
+    });
+
+    // Safety check: if role is unknown, deny access
+    if (isRoleUnknown) {
+      console.warn('Profile not loaded or role unknown - denying access');
+      toast.error('Unable to verify your permissions. Please refresh the page and try again.', {
+        position: 'top-center',
+        duration: 4000,
+      });
+      return;
+    }
+
+    setSelectedTransactionForReprint(transaction);
+    
+    if (isClerk) {
+      // Clerk needs verification
+      console.log('Clerk detected - showing verification modal');
+      setShowVerificationModal(true);
+    } else if (isPharmacistOrAdmin) {
+      // Pharmacist/Admin can reprint directly
+      console.log('Pharmacist/Admin detected - reprinting directly');
+      fetchTransactionDetailsAndShowReceipt(transaction.TransactionID);
+    } else {
+      // Unknown role - deny access
+      console.warn('Unknown role detected:', userRole, '- denying reprint access');
+      alert('You do not have permission to reprint receipts. Only pharmacist and admin accounts can reprint receipts.');
+    }
+  };
+
+  // Verify and reprint for clerks
+  const handleVerifyAndReprint = async () => {
+    if (!verificationUsername.trim() || !verificationPassword.trim()) {
+      toast.error('Please enter username and password', {
+        position: 'top-center',
+        duration: 3000,
+      });
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const response = await api.post('/auth/verify-pharmacist-admin', {
+        username: verificationUsername,
+        password: verificationPassword
+      });
+
+      if (response.data.success) {
+        // Success - close modal and show receipt
+        setShowVerificationModal(false);
+        setVerificationUsername('');
+        setVerificationPassword('');
+        
+        // Fetch transaction details and show receipt
+        if (selectedTransactionForReprint) {
+          await fetchTransactionDetailsAndShowReceipt(selectedTransactionForReprint.TransactionID);
+        }
+      } else {
+        // Show error message from server
+        toast.error(response.data.message || 'Authorization failed. Please check your credentials.', {
+          position: 'top-center',
+          duration: 4000,
+        });
+      }
+    } catch (error: any) {
+      // Handle different error types
+      console.error('Verification error details:', {
+        status: error.response?.status,
+        message: error.response?.data?.message,
+        data: error.response?.data,
+        error: error.message
+      });
+      
+      if (error.response?.status === 401) {
+        const serverMessage = error.response?.data?.message || 'Invalid credentials';
+        toast.error(`${serverMessage}. Please check the username and password.`, {
+          position: 'top-center',
+          duration: 4000,
+        });
+      } else if (error.response?.status === 403) {
+        toast.error('Only pharmacist or admin accounts can authorize this action.', {
+          position: 'top-center',
+          duration: 4000,
+        });
+      } else if (error.response?.data?.message) {
+        toast.error(error.response.data.message, {
+          position: 'top-center',
+          duration: 4000,
+        });
+      } else if (error.message) {
+        toast.error(`Error: ${error.message}`, {
+          position: 'top-center',
+          duration: 4000,
+        });
+      } else {
+        toast.error('Authorization failed. Please try again.', {
+          position: 'top-center',
+          duration: 4000,
+        });
+      }
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // Fetch transaction details and show receipt
+  const fetchTransactionDetailsAndShowReceipt = async (transactionId: string) => {
+    try {
+      const response = await api.get(`/transactions/${transactionId}`);
+      const transaction = response.data;
+      
+      // Transform to receipt format
+      const receiptItems = transaction.Transaction_Item?.map((item: any) => ({
+        productName: item.Product?.Name || 'Unknown Product',
+        quantity: item.Quantity,
+        unitPrice: item.UnitPrice,
+        subtotal: item.Subtotal,
+        discountAmount: item.DiscountAmount || 0,
+        vatAmount: item.VATAmount || 0
+      })) || [];
+
+      // Calculate totals from transaction
+      const subtotal = transaction.Transaction_Item?.reduce((sum: number, item: any) => {
+        const itemSubtotal = item.UnitPrice * item.Quantity;
+        return sum + itemSubtotal;
+      }, 0) || 0;
+
+      const discount = transaction.Transaction_Item?.reduce((sum: number, item: any) => {
+        return sum + (item.DiscountAmount || 0);
+      }, 0) || 0;
+
+      const vat = transaction.VATAmount || transaction.Transaction_Item?.reduce((sum: number, item: any) => {
+        return sum + (item.VATAmount || 0);
+      }, 0) || 0;
+
+      const total = transaction.Total || 0;
+
+      // Check if Senior/PWD discount was applied (check if SeniorPWDID exists)
+      const isSeniorPWDActive = !!transaction.SeniorPWDID;
+
+      setReceiptData({
+        transactionId: transaction.TransactionID,
+        referenceNo: transaction.ReferenceNo,
+        orderDateTime: transaction.OrderDateTime,
+        paymentMethod: transaction.PaymentMethod.toLowerCase(),
+        items: receiptItems,
+        subtotal: subtotal,
+        discount: discount,
+        vat: vat,
+        total: total,
+        cashReceived: transaction.CashReceived || undefined,
+        change: transaction.PaymentChange || undefined,
+        isSeniorPWDActive: isSeniorPWDActive
+      });
+
+      setShowReceipt(true);
+    } catch (error) {
+      console.error('Error fetching transaction details:', error);
+      alert('Failed to load transaction details');
+    }
   };
 
   return (
@@ -345,15 +614,21 @@ const HistoryPage = () => {
                   {transaction.Items.map((item, index) => (
                     <div key={index} className="flex items-center space-x-4">
                       {/* Product Image */}
-                      <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden">
-                        {item.Image ? (
+                      <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                        {item.Image && !item.Image.includes('via.placeholder.com') ? (
                           <img 
                             src={item.Image} 
                             alt={item.ProductName}
                             className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Hide image on error, show placeholder div
+                              e.currentTarget.style.display = 'none';
+                            }}
                           />
                         ) : (
-                          <div className="w-full h-full bg-gray-200 rounded-lg"></div>
+                          <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
+                            <span className="text-xs text-gray-400">No Image</span>
+                          </div>
                         )}
                       </div>
 
@@ -378,10 +653,24 @@ const HistoryPage = () => {
                       </div>
                     </div>
                   ))}
+                  
+                  {/* Show indicator if there are more items */}
+                  {transaction.ItemCount && transaction.ItemCount > transaction.Items.length && (
+                    <div className="text-center py-2 text-sm text-gray-500 italic">
+                      + {transaction.ItemCount - transaction.Items.length} more item{transaction.ItemCount - transaction.Items.length > 1 ? 's' : ''} (view details to see all)
+                    </div>
+                  )}
                 </div>
 
                 {/* Order Footer */}
-                <div className="flex justify-end mt-4 pt-4 border-t border-gray-200">
+                <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-200">
+                  <button 
+                    onClick={() => handleReprintReceipt(transaction)}
+                    className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Reprint Receipt
+                  </button>
                   <button 
                     onClick={() => openTransactionModal(transaction)}
                     className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -395,13 +684,59 @@ const HistoryPage = () => {
         </div>
 
         {/* Pagination */}
-        <div className="flex justify-center space-x-2 mt-8">
-          <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">‹</button>
-          <button className="px-3 py-1 bg-blue-600 text-white rounded">1</button>
-          <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">2</button>
-          <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">3</button>
-          <button className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded">›</button>
-        </div>
+        {!loading && totalPages > 1 && (
+          <div className="flex justify-center items-center space-x-2 mt-8">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              ‹ Previous
+            </button>
+            
+            <div className="flex items-center space-x-1">
+              {/* Show page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-1 rounded-lg transition-colors ${
+                      currentPage === pageNum
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next ›
+            </button>
+            
+            <span className="text-sm text-gray-500 ml-4">
+              Page {currentPage} of {totalPages} ({totalTransactions} total)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Transaction Details Modal */}
@@ -411,7 +746,7 @@ const HistoryPage = () => {
             {/* Modal Header */}
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center space-x-3">
-                <Receipt className="w-6 h-6 text-blue-600" />
+                <ReceiptIcon className="w-6 h-6 text-blue-600" />
                 <h2 className="text-xl font-semibold text-gray-800">Transaction Details</h2>
               </div>
               <button
@@ -428,7 +763,7 @@ const HistoryPage = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <div className="flex items-center space-x-2">
-                    <Receipt className="w-4 h-4 text-gray-500" />
+                    <ReceiptIcon className="w-4 h-4 text-gray-500" />
                     <span className="text-sm text-gray-600">Order Number:</span>
                     <span className="font-medium">#{selectedTransaction.ReferenceNo}</span>
                   </div>
@@ -492,15 +827,21 @@ const HistoryPage = () => {
                       {/* Product Header */}
                       <div className="flex items-center space-x-4">
                         {/* Product Image */}
-                        <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
-                          {item.Image ? (
+                        <div className="w-12 h-12 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {item.Image && !item.Image.includes('via.placeholder.com') ? (
                             <img 
                               src={item.Image} 
                               alt={item.ProductName}
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                // Hide image on error, show placeholder div
+                                e.currentTarget.style.display = 'none';
+                              }}
                             />
                           ) : (
-                            <div className="w-full h-full bg-gray-200 rounded-lg"></div>
+                            <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
+                              <span className="text-xs text-gray-400">No Image</span>
+                            </div>
                           )}
                         </div>
 
@@ -600,6 +941,100 @@ const HistoryPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Verification Modal for Clerks */}
+      {showVerificationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-800">Authorization Required</h2>
+              <button
+                onClick={() => {
+                  setShowVerificationModal(false);
+                  setVerificationUsername('');
+                  setVerificationPassword('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-gray-600">
+                Clerk accounts require authorization from a pharmacist or admin to reprint receipts.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pharmacist/Admin Username
+                </label>
+                <input
+                  type="text"
+                  value={verificationUsername}
+                  onChange={(e) => setVerificationUsername(e.target.value)}
+                  placeholder="Enter username"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={verificationPassword}
+                  onChange={(e) => setVerificationPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleVerifyAndReprint();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowVerificationModal(false);
+                  setVerificationUsername('');
+                  setVerificationPassword('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVerifyAndReprint}
+                disabled={isVerifying || !verificationUsername.trim() || !verificationPassword.trim()}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isVerifying ? 'Verifying...' : 'Authorize & Reprint'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Modal */}
+      {showReceipt && receiptData && (
+        <Receipt
+          transactionId={receiptData.transactionId}
+          referenceNo={receiptData.referenceNo}
+          orderDateTime={receiptData.orderDateTime}
+          paymentMethod={receiptData.paymentMethod}
+          items={receiptData.items}
+          subtotal={receiptData.subtotal}
+          discount={receiptData.discount}
+          vat={receiptData.vat}
+          total={receiptData.total}
+          cashReceived={receiptData.cashReceived}
+          change={receiptData.change}
+          isSeniorPWDActive={receiptData.isSeniorPWDActive}
+          onClose={() => setShowReceipt(false)}
+        />
       )}
     </div>
   );

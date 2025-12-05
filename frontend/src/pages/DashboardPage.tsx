@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Grid3X3, 
@@ -79,7 +79,11 @@ const DashboardPage = () => {
   const [isProcessing, setIsProcessing] = useState(false);          // Transaction processing state
   const [currentTime, setCurrentTime] = useState('');               // Current time display
   const [isSeniorPWDActive, setIsSeniorPWDActive] = useState(false); // Senior/PWD discount state
+  const [seniorPWDID, setSeniorPWDID] = useState<string>(''); // Senior/PWD ID
+  const [seniorPWDType, setSeniorPWDType] = useState<'pwd' | 'senior' | null>(null); // PWD or Senior Citizen type
+  const [showSeniorPWDModal, setShowSeniorPWDModal] = useState(false); // Senior/PWD ID modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);  // Confirmation modal state
+  const [showClearCartModal, setShowClearCartModal] = useState(false);  // Clear cart modal state
   
   // Receipt state
   const [showReceipt, setShowReceipt] = useState(false);
@@ -129,47 +133,53 @@ const DashboardPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch products from backend API on component mount
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
+  // Fetch products from backend API - can be called on mount or after transactions
+  const fetchProducts = useCallback(async (showLoading = true) => {
+    try {
+      if (showLoading) {
         setLoading(true);
-        const response = await api.get('/products');
-        console.log('Products fetched:', response.data); // Debug log
-        
-        // Fetch stock for each product
-        const productsWithStock = await Promise.all(
-          response.data.map(async (product: Product) => {
-            try {
-              const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
-              return {
-                ...product,
-                stock: stockResponse.data.totalStock || 0
-              };
-            } catch (err) {
-              console.error(`Error fetching stock for product ${product.ProductID}:`, err);
-              return {
-                ...product,
-                stock: 0
-              };
-            }
-          })
-        );
-        
-        setProducts(productsWithStock);
-        setError('');
-      } catch (err) {
-        console.error('Error fetching products:', err);
-        setError('Failed to load products');
-        // Keep products array empty if API fails
-        setProducts([]);
-      } finally {
+      }
+      const response = await api.get('/products');
+      console.log('Products fetched:', response.data); // Debug log
+      
+      // Fetch stock for each product
+      const productsWithStock = await Promise.all(
+        response.data.map(async (product: Product) => {
+          try {
+            const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
+            return {
+              ...product,
+              stock: stockResponse.data.totalStock || 0
+            };
+          } catch (err) {
+            console.error(`Error fetching stock for product ${product.ProductID}:`, err);
+            return {
+              ...product,
+              stock: 0
+            };
+          }
+        })
+      );
+      
+      setProducts(productsWithStock);
+      setError('');
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      setError('Failed to load products');
+      // Keep products array empty if API fails
+      setProducts([]);
+    } finally {
+      if (showLoading) {
         setLoading(false);
       }
-    };
-
-    fetchProducts();
+    }
   }, []);
+
+  // Fetch products on component mount
+  useEffect(() => {
+    fetchProducts(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only fetch on mount, refresh after transactions is handled separately
 
   // Filter and sort products based on search, category, and filter criteria
   useEffect(() => {
@@ -318,23 +328,46 @@ const DashboardPage = () => {
     toast.success('Item removed from cart');
   };
 
-  // Clear entire cart with user confirmation
+  // Clear cart without confirmation (used after successful transaction)
+  const clearCartSilently = () => {
+    setCartItems([]);
+    setSelectedPaymentMethod('');
+    setReferenceNumber('');
+    setCashReceived('');
+    setIsSeniorPWDActive(false);
+    setSeniorPWDID(''); // Reset Senior/PWD ID
+    setSeniorPWDType(null); // Reset Senior/PWD type
+  };
+
+  // Clear entire cart with modal confirmation (used when user clicks clear button)
   const clearCart = () => {
     if (cartItems.length === 0) {
       toast.error('Cart is already empty');
       return;
     }
+    setShowClearCartModal(true);
+  };
 
-    const confirmed = window.confirm(
-      'Are you sure you want to clear the cart? This action cannot be undone.'
-    );
-    
-    if (confirmed) {
-      setCartItems([]);
-      setSelectedPaymentMethod('');
-      setReferenceNumber('');
-      setCashReceived('');
-      toast.success('Cart cleared successfully');
+  // Handle confirmed cart clearing
+  const handleConfirmClearCart = () => {
+    clearCartSilently();
+    setShowClearCartModal(false);
+    toast.success('Cart cleared successfully');
+  };
+
+  // Handle confirmed Senior/PWD ID input
+  const handleConfirmSeniorPWD = () => {
+    if (!seniorPWDType) {
+      toast.error('Please select PWD or Senior Citizen');
+      return;
+    }
+    if (seniorPWDID.trim()) {
+      setIsSeniorPWDActive(true);
+      setShowSeniorPWDModal(false);
+      const typeLabel = seniorPWDType === 'pwd' ? 'PWD' : 'Senior Citizen';
+      toast.success(`${typeLabel} discount applied`);
+    } else {
+      toast.error('Please enter a valid ID');
     }
   };
 
@@ -397,7 +430,8 @@ const DashboardPage = () => {
       toast.error('Please select a payment method');
       return;
     }
-    if (!referenceNumber.trim()) {
+    // Only require reference number for non-cash transactions
+    if (selectedPaymentMethod !== 'cash' && !referenceNumber.trim()) {
       toast.error('Please enter a reference number from the payment device');
       return;
     }
@@ -426,7 +460,8 @@ const DashboardPage = () => {
       toast.error('Please select a payment method');
       return;
     }
-    if (!referenceNumber.trim()) {
+    // Only require reference number for non-cash transactions
+    if (selectedPaymentMethod !== 'cash' && !referenceNumber.trim()) {
       toast.error('Please enter a reference number from the payment device');
       return;
     }
@@ -444,9 +479,18 @@ const DashboardPage = () => {
 
     try {
       // Create full reference number with payment method prefix
-      const prefix = selectedPaymentMethod === 'cash' ? 'CASH' : 
-                    selectedPaymentMethod === 'gcash' ? 'GCASH' : 'MAYA';
-      const fullReferenceNumber = `${prefix}-${referenceNumber}`;
+      // For cash, generate automatic reference number using timestamp
+      let fullReferenceNumber: string;
+      if (selectedPaymentMethod === 'cash') {
+        // Generate automatic reference for cash: CASH-YYYYMMDD-HHMMSS
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
+        fullReferenceNumber = `CASH-${dateStr}-${timeStr}`;
+      } else {
+        const prefix = selectedPaymentMethod === 'gcash' ? 'GCASH' : 'MAYA';
+        fullReferenceNumber = `${prefix}-${referenceNumber}`;
+      }
       
       // Prepare transaction data for API
       const transactionData = {
@@ -454,6 +498,9 @@ const DashboardPage = () => {
         paymentMethod: selectedPaymentMethod,
         subtotal: calculateSubtotal(),
         isSeniorPWDActive: isSeniorPWDActive, // Send discount flag instead of calculated amount
+        seniorPWDID: isSeniorPWDActive && seniorPWDID && seniorPWDType 
+          ? `${seniorPWDType.toUpperCase()}-${seniorPWDID}` 
+          : null, // Send PWD/Senior ID with prefix if active
         cashReceived: selectedPaymentMethod === 'cash' ? parseFloat(cashReceived) || 0 : null,
         change: calculateChange(),
         userId: user?.id || user?.user_metadata?.id, // Send the authenticated user's ID
@@ -510,7 +557,9 @@ const DashboardPage = () => {
           change: selectedPaymentMethod === 'cash' ? calculateChange() : undefined
         });
         
-        clearCart();
+        clearCartSilently(); // Clear cart without confirmation after successful transaction
+        // Refresh products to update stock numbers in real-time
+        fetchProducts(false); // Don't show loading spinner when refreshing after transaction
         setShowReceipt(true);
         // Optionally navigate to history page
         // navigate('/history');
@@ -789,14 +838,26 @@ const DashboardPage = () => {
             </div>
             <div className="flex space-x-2 w-full sm:w-auto">
               <button 
-                onClick={() => setIsSeniorPWDActive(!isSeniorPWDActive)}
+                onClick={() => {
+                  if (!isSeniorPWDActive) {
+                    // When activating, show modal to input ID
+                    setShowSeniorPWDModal(true);
+                  } else {
+                    // When deactivating, clear the ID and type
+                    setIsSeniorPWDActive(false);
+                    setSeniorPWDID('');
+                    setSeniorPWDType(null);
+                  }
+                }}
                 className={`px-3 py-1 text-sm rounded flex-1 sm:flex-none text-center transition-colors ${
                   isSeniorPWDActive
                     ? 'bg-green-600 text-white'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
               >
-                {isSeniorPWDActive ? '✓ Senior/PWD' : 'Senior/PWD'}
+                {isSeniorPWDActive 
+                  ? `✓ ${seniorPWDType === 'pwd' ? 'PWD' : seniorPWDType === 'senior' ? 'Senior' : 'Senior/PWD'}`
+                  : 'Senior/PWD'}
               </button>
               <button 
                 onClick={clearCart}
@@ -926,41 +987,46 @@ const DashboardPage = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Reference Number <span className="text-red-500">*</span>
             </label>
-            <div className="flex">
-              {selectedPaymentMethod && (
-                <span className="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-r-0 border-gray-300 rounded-l-md">
-                  {selectedPaymentMethod === 'cash' ? 'CASH-' : 
-                   selectedPaymentMethod === 'gcash' ? 'GCASH-' : 
-                   'MAYA-'}
-                </span>
-              )}
-              <input
-                type="text"
-                placeholder={selectedPaymentMethod ? "Enter reference number" : "Select payment method first"}
-                value={referenceNumber}
-                onChange={handleReferenceNumberChange}
-                disabled={!selectedPaymentMethod}
-                className={`flex-1 p-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  selectedPaymentMethod ? 'rounded-l-none' : 'rounded-l-md'
-                } ${
-                  !selectedPaymentMethod 
-                    ? 'bg-gray-100 cursor-not-allowed border-gray-300' 
-                    : !referenceNumber.trim() 
-                      ? 'border-red-300 bg-red-50' 
-                      : 'border-gray-300'
-                }`}
-                required
-              />
-            </div>
-            {selectedPaymentMethod && (
+            {selectedPaymentMethod !== 'cash' && (
+              <>
+                <div className="flex">
+                  {selectedPaymentMethod && (
+                    <span className="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-r-0 border-gray-300 rounded-l-md">
+                      {selectedPaymentMethod === 'gcash' ? 'GCASH-' : 'MAYA-'}
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    placeholder={selectedPaymentMethod ? "Enter reference number" : "Select payment method first"}
+                    value={referenceNumber}
+                    onChange={handleReferenceNumberChange}
+                    disabled={!selectedPaymentMethod}
+                    className={`flex-1 p-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      selectedPaymentMethod ? 'rounded-l-none' : 'rounded-l-md'
+                    } ${
+                      !selectedPaymentMethod 
+                        ? 'bg-gray-100 cursor-not-allowed border-gray-300' 
+                        : !referenceNumber.trim() 
+                          ? 'border-red-300 bg-red-50' 
+                          : 'border-gray-300'
+                    }`}
+                    required
+                  />
+                </div>
+                {selectedPaymentMethod && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter the reference number from the {selectedPaymentMethod} payment device
+                    <br />
+                    <span className="text-gray-400">
+                      Example: {selectedPaymentMethod === 'gcash' ? 'GCASH-67890' : 'MAYA-54321'}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
+            {selectedPaymentMethod === 'cash' && (
               <p className="text-xs text-gray-500 mt-1">
-                Enter the reference number from the {selectedPaymentMethod} payment device
-                <br />
-                <span className="text-gray-400">
-                  Example: {selectedPaymentMethod === 'cash' ? 'CASH-12345' : 
-                           selectedPaymentMethod === 'gcash' ? 'GCASH-67890' : 
-                           'MAYA-54321'}
-                </span>
+                Reference number will be generated automatically for cash transactions
               </p>
             )}
           </div>
@@ -971,7 +1037,7 @@ const DashboardPage = () => {
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             disabled={
               !selectedPaymentMethod || 
-              !referenceNumber.trim() || 
+              (selectedPaymentMethod !== 'cash' && !referenceNumber.trim()) || 
               cartItems.length === 0 || 
               isProcessing ||
               (selectedPaymentMethod === 'cash' && (!cashReceived || parseFloat(cashReceived) <= 0))
@@ -1047,6 +1113,155 @@ const DashboardPage = () => {
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 Confirm Transaction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Senior/PWD ID Input Modal */}
+      {showSeniorPWDModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-800">Senior/PWD Discount</h2>
+              <button
+                onClick={() => {
+                  setShowSeniorPWDModal(false);
+                  setSeniorPWDID('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-gray-600 font-medium">
+                Select discount type:
+              </p>
+              
+              {/* PWD/Senior Selection Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setSeniorPWDType('pwd')}
+                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-colors ${
+                    seniorPWDType === 'pwd'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  PWD
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSeniorPWDType('senior')}
+                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-colors ${
+                    seniorPWDType === 'senior'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  Senior Citizen
+                </button>
+              </div>
+
+              {seniorPWDType && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Enter {seniorPWDType === 'pwd' ? 'PWD' : 'Senior Citizen'} ID:
+                    </label>
+                    <input
+                      type="text"
+                      value={seniorPWDID}
+                      onChange={(e) => setSeniorPWDID(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleConfirmSeniorPWD();
+                        }
+                      }}
+                      placeholder={`Enter ${seniorPWDType === 'pwd' ? 'PWD' : 'Senior Citizen'} ID`}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    This ID will be recorded as <strong>{seniorPWDType.toUpperCase()}-{seniorPWDID || 'XXXXX'}</strong> with the transaction for compliance purposes.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowSeniorPWDModal(false);
+                  setSeniorPWDID('');
+                  setSeniorPWDType(null);
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSeniorPWD}
+                disabled={!seniorPWDType || !seniorPWDID.trim()}
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Apply Discount
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Cart Confirmation Modal */}
+      {showClearCartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-800">Clear Cart</h2>
+              <button
+                onClick={() => setShowClearCartModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <p className="text-gray-600">
+                Are you sure you want to clear the cart? This action cannot be undone.
+              </p>
+              {cartItems.length > 0 && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-2">
+                    This will remove <strong>{cartItems.length}</strong> item{cartItems.length !== 1 ? 's' : ''} from your cart.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowClearCartModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmClearCart}
+                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+              >
+                Clear Cart
               </button>
             </div>
           </div>
