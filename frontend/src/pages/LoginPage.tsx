@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Lock, Mail, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { auth } from '../services/supabase';
 import api from '../services/api';
+import toast from 'react-hot-toast';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -20,6 +21,11 @@ const LoginPage = () => {
   const [otpError, setOtpError] = useState('');
   const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
   const [tempSession, setTempSession] = useState<any>(null);
+  
+  // Contact administrator modal state
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+  const adminEmail = 'jemseyamonsot@gmail.com';
   
   const navigate = useNavigate();
 
@@ -453,9 +459,14 @@ const LoginPage = () => {
           <div className="text-center">
             <p className="text-sm text-base-content/60">
               Don't have an account?{' '}
-              <a href="#" className="link font-medium" style={{ color: '#145DA0' }}>
+              <button
+                type="button"
+                onClick={() => setShowContactModal(true)}
+                className="link font-medium"
+                style={{ color: '#145DA0' }}
+              >
                 Contact Administrator
-              </a>
+              </button>
             </p>
           </div>
         </div>
@@ -467,6 +478,88 @@ const LoginPage = () => {
           Pharmacy Point of Sale System © 2025
         </p>
       </div>
+
+      {/* Contact Administrator Modal */}
+      {showContactModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" style={{ zIndex: 9999 }}>
+          <div className="card w-full max-w-md bg-base-100 shadow-2xl m-4">
+            <div className="card-body">
+              <h2 className="card-title text-2xl mb-2">Contact Administrator</h2>
+              <p className="text-base-content/70 mb-4">
+                Please email this person for account concerns!
+              </p>
+
+              <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-600 mb-1">Administrator Email:</p>
+                    <div className="flex items-center gap-2">
+                      <code 
+                        className="text-lg font-mono font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded border-2 border-blue-300 select-all"
+                        style={{ 
+                          backgroundColor: '#EFF6FF',
+                          color: '#2563EB',
+                          borderColor: '#93C5FD',
+                          userSelect: 'all'
+                        }}
+                      >
+                        {adminEmail}
+                      </code>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(adminEmail);
+                        setEmailCopied(true);
+                        toast.success('Email copied to clipboard!', {
+                          position: 'top-center',
+                          duration: 2000,
+                        });
+                        setTimeout(() => setEmailCopied(false), 2000);
+                      } catch (err) {
+                        toast.error('Failed to copy email', {
+                          position: 'top-center',
+                          duration: 2000,
+                        });
+                      }
+                    }}
+                    className="btn btn-sm btn-ghost flex-shrink-0"
+                    title="Copy email"
+                  >
+                    {emailCopied ? (
+                      <Check className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <Copy className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="card-actions justify-end mt-4">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setShowContactModal(false);
+                    setEmailCopied(false);
+                  }}
+                >
+                  Close
+                </button>
+                <a
+                  href={`mailto:${adminEmail}?subject=Account Request&body=Hello,%0D%0A%0D%0AI would like to request an account for the Pharmacy Point of Sale System.%0D%0A%0D%0AThank you.`}
+                  className="btn text-white"
+                  style={{ backgroundColor: '#145DA0' }}
+                  onClick={() => setShowContactModal(false)}
+                >
+                  <Mail className="w-4 h-4 mr-2" />
+                  Open Email Client
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OTP Verification Modal */}
       {showOTPModal && (
