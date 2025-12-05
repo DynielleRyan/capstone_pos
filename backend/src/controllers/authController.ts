@@ -418,12 +418,42 @@ export const deactivateAccount = async (req: Request, res: Response) => {
 //email endpoint
 // Confirm a user's email using admin API
 export const confirmUserEmail = async (req: Request, res: Response) => {
-    const { data, error } = await supabase.auth.admin.updateUserById(req.body.userId,  {
-        email_confirm: true,
-
+    try {
+        const { userId } = req.body;
         
-    });
-    res.status(200).json({message: "Jemsey"});
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: "User ID is required"
+            });
+        }
+
+        const { data, error } = await supabase.auth.admin.updateUserById(userId, {
+            email_confirm: true
+        });
+
+        if (error) {
+            console.error('Error confirming user email:', error);
+            return res.status(500).json({
+                success: false,
+                message: "Failed to confirm user email",
+                error: error.message
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User email confirmed successfully",
+            data: data
+        });
+    } catch (error: any) {
+        console.error('Error in confirmUserEmail:', error);
+        return res.status(500).json({
+            success: false,
+            message: "An error occurred while confirming user email",
+            error: error?.message || 'Unknown error'
+        });
+    }
 };
 
 // Verify pharmacist/admin credentials for clerk authorization
@@ -626,7 +656,7 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
                 authorizedBy: {
                     userId: userRecord.UserID,
                     username: userRecord.Username,
-                    role: isAdmin ? 'admin' : (isPharmacistRole ? 'pharmacist' : 'pharmacist')
+                    role: isAdmin ? 'admin' : (isPharmacistRole || isPharmacist ? 'pharmacist' : 'clerk')
                 }
             }
         });
