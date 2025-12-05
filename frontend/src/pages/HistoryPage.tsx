@@ -62,7 +62,6 @@ const HistoryPage = () => {
   const [loadedTransactionItems, setLoadedTransactionItems] = useState<Record<string, TransactionItem[]>>({});
   
   // Reprint receipt states
-  const [showReprintModal, setShowReprintModal] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [selectedTransactionForReprint, setSelectedTransactionForReprint] = useState<Transaction | null>(null);
   const [verificationUsername, setVerificationUsername] = useState('');
@@ -238,7 +237,7 @@ const HistoryPage = () => {
   const openTransactionModal = async (transaction: Transaction) => {
     // Load full transaction items if not already loaded
     let fullItems = transaction.Items;
-    if (transaction.ItemCount > 1 && !loadedTransactionItems[transaction.TransactionID]) {
+    if (transaction.ItemCount && transaction.ItemCount > 1 && !loadedTransactionItems[transaction.TransactionID]) {
       const items = await loadTransactionItems(transaction.TransactionID);
       fullItems = items;
       

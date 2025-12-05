@@ -55,9 +55,6 @@ const LoginPage = () => {
         // Store session temporarily (don't set in Supabase yet to prevent auto-redirect)
         setTempSession(data.session);
         
-        // Use session token directly for API calls (temporary)
-        const originalGetSession = supabase.auth.getSession;
-        
         // Check if this is first-time login by calling backend
         // Temporarily set session for API calls, but we'll handle redirect manually
         await auth.setSession({
