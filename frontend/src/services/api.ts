@@ -17,6 +17,11 @@ export const api = axios.create({
 api.interceptors.request.use(
   async (config) => {
     try {
+      // If Authorization header is already set (e.g., from explicit call), use it
+      if (config.headers.Authorization) {
+        return config;
+      }
+
       // Get current session from Supabase
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
@@ -24,7 +29,7 @@ api.interceptors.request.use(
         config.headers.Authorization = `Bearer ${session.access_token}`;
       } else {
         // Only reject for truly protected endpoints that require authentication
-        // Verification endpoint should work even without session (though it's better with one)
+        // OTP endpoints need session but we'll let them handle the error
         const isProtectedEndpoint = config.url?.includes('/auth/profile') || 
                                    config.url?.includes('/auth/update') ||
                                    config.url?.includes('/auth/change-password') ||
@@ -65,8 +70,14 @@ api.interceptors.response.use(
     const isProfileEndpoint = error.config?.url?.includes('/auth/profile');
     // Don't redirect on verification endpoint 401s - these are expected for invalid credentials
     const isVerificationEndpoint = error.config?.url?.includes('/auth/verify-pharmacist-admin');
+    // Don't redirect on OTP verification endpoint 401s - let the component handle it
+    const isOTPVerificationEndpoint = error.config?.url?.includes('/auth/verify-otp');
+    // Don't redirect on OTP send endpoint 401s - let the component handle it
+    const isOTPSendEndpoint = error.config?.url?.includes('/auth/send-otp');
+    // Don't redirect on first login check endpoint 401s - let the component handle it
+    const isFirstLoginCheckEndpoint = error.config?.url?.includes('/auth/check-first-login');
     
-    if (error.response?.status === 401 && !isRedirecting && !isProfileEndpoint && !isVerificationEndpoint) {
+    if (error.response?.status === 401 && !isRedirecting && !isProfileEndpoint && !isVerificationEndpoint && !isOTPVerificationEndpoint && !isOTPSendEndpoint && !isFirstLoginCheckEndpoint) {
       // Only redirect if we're not already on the login page
       const currentPath = window.location.pathname;
       if (!currentPath.includes('/login') && !currentPath.includes('/reset-password')) {
