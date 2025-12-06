@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Lock, Mail, Eye, EyeOff, Copy, Check } from 'lucide-react';
-import { auth, supabase } from '../services/supabase';
+import { auth } from '../services/supabase';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -240,8 +240,6 @@ const LoginPage = () => {
     } catch (err: any) {
       setOtpError(err.response?.data?.message || 'Failed to resend code. Please try again.');
       console.error('Resend OTP error:', err);
-    } finally {
-      setIsVerifyingOTP(false);
     } finally {
       setIsVerifyingOTP(false);
     }
