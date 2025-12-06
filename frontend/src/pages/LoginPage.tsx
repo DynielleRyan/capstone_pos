@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Lock, Mail, Eye, EyeOff, Copy, Check } from 'lucide-react';
-import { auth } from '../services/supabase';
+import { auth, supabase } from '../services/supabase';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -78,7 +78,11 @@ const LoginPage = () => {
             console.log('First-time login detected - sending OTP...');
             // First-time login - send OTP and show modal
             try {
-              const otpResponse = await api.post('/auth/send-otp');
+              const otpResponse = await api.post('/auth/send-otp', {}, {
+                headers: {
+                  Authorization: `Bearer ${data.session.access_token}`
+                }
+              });
               console.log('OTP sent response:', otpResponse.data);
               
               // Store session and show modal BEFORE signing out
@@ -141,12 +145,29 @@ const LoginPage = () => {
 
     try {
       // Set session temporarily for API call
-      await auth.setSession({
+      const { error: sessionError } = await auth.setSession({
         access_token: tempSession.access_token,
         refresh_token: tempSession.refresh_token
       });
 
-      const response = await api.post('/auth/verify-otp', { otp });
+      if (sessionError) {
+        console.error('Error setting session:', sessionError);
+        setOtpError('Session error. Please log in again.');
+        setTempSession(null);
+        await auth.signOut();
+        return;
+      }
+
+      // Use the token directly from tempSession to avoid timing issues
+      // The backend will validate this token
+      console.log('Calling verify-otp endpoint with OTP...');
+      const response = await api.post('/auth/verify-otp', { otp }, {
+        headers: {
+          Authorization: `Bearer ${tempSession.access_token}`
+        }
+      });
+
+      console.log('OTP verification response:', response.data);
 
       if (response.data.success) {
         // OTP verified - clear OTP flag and navigate
@@ -154,17 +175,28 @@ const LoginPage = () => {
         setShowOTPModal(false);
         setOtp('');
         setTempSession(null);
+        toast.success('Verification successful!', { position: 'top-center' });
         navigate('/dashboard');
       } else {
         setOtpError(response.data.message || 'Invalid verification code. Please try again.');
-        // Sign out again if verification failed
-        await auth.signOut();
       }
     } catch (err: any) {
-      setOtpError(err.response?.data?.message || 'Failed to verify code. Please try again.');
       console.error('OTP verification error:', err);
-      // Sign out on error
-      await auth.signOut();
+      console.error('Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        headers: err.response?.headers
+      });
+      
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to verify code. Please try again.';
+      setOtpError(errorMessage);
+      
+      // Only sign out if it's a session/token error, not an OTP validation error
+      if (err.response?.status === 401 && err.response?.data?.message?.includes('token')) {
+        setTempSession(null);
+        await auth.signOut();
+      }
     } finally {
       setIsVerifyingOTP(false);
     }
@@ -180,26 +212,36 @@ const LoginPage = () => {
     setIsVerifyingOTP(true);
     try {
       // Set session temporarily for API call
-      await auth.setSession({
+      const { error: sessionError } = await auth.setSession({
         access_token: tempSession.access_token,
         refresh_token: tempSession.refresh_token
       });
 
-      const response = await api.post('/auth/send-otp');
+      if (sessionError) {
+        console.error('Error setting session for resend:', sessionError);
+        setOtpError('Session error. Please log in again.');
+        setIsVerifyingOTP(false);
+        return;
+      }
+
+      // Use token directly from tempSession
+      const response = await api.post('/auth/send-otp', {}, {
+        headers: {
+          Authorization: `Bearer ${tempSession.access_token}`
+        }
+      });
       
       if (response.data.success) {
-        alert('Verification code has been resent to your email.');
+        toast.success('Verification code has been resent to your email.', { position: 'top-center' });
         setOtp(''); // Clear current OTP input
       } else {
         setOtpError(response.data.message || 'Failed to resend code. Please try again.');
       }
-      
-      // Sign out again to prevent redirect
-      await auth.signOut();
     } catch (err: any) {
       setOtpError(err.response?.data?.message || 'Failed to resend code. Please try again.');
       console.error('Resend OTP error:', err);
-      await auth.signOut();
+    } finally {
+      setIsVerifyingOTP(false);
     } finally {
       setIsVerifyingOTP(false);
     }
