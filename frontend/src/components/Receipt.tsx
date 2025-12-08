@@ -65,8 +65,8 @@ const Receipt: React.FC<ReceiptProps> = ({
 
   const handlePrint = () => {
     // Create a new window with just the receipt content for printing
-    // PT-210 thermal printer: 48mm width
-    const printWindow = window.open('', '_blank', 'width=200,height=600');
+    // Thermal printer: 57mm width
+    const printWindow = window.open('', '_blank', 'width=220,height=600');
     
     if (!printWindow) {
       // If popup blocked, fall back to regular print
@@ -75,23 +75,23 @@ const Receipt: React.FC<ReceiptProps> = ({
     }
     
     // Build the receipt HTML
-    // Using Letter paper size (standard) but constraining content to 80mm width
+    // Optimized for 57mm x 30mm thermal paper
     const receiptHTML = `
       <!DOCTYPE html>
       <html>
         <head>
           <title>Receipt - ${referenceNo}</title>
           <style>
-            /* PT-210 Thermal Printer: 48mm width */
+            /* Thermal Printer: 57mm width */
             @page {
-              size: 48mm auto;
+              size: 57mm auto;
               margin: 0;
             }
             
             /* For thermal printers - custom size */
             @media print {
               @page {
-                size: 48mm auto;
+                size: 57mm auto;
                 margin: 0;
               }
               
@@ -121,8 +121,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             
             body {
               font-family: 'Courier New', monospace;
-              font-size: 9pt;
-              line-height: 1.4;
+              font-size: 10pt;
+              line-height: 1.3;
               color: #000;
               background: white;
               padding: 0 !important;
@@ -132,91 +132,94 @@ const Receipt: React.FC<ReceiptProps> = ({
               align-items: flex-start;
             }
             
-            /* Receipt container - exactly 48mm wide for PT-210 */
+            /* Receipt container - exactly 57mm wide */
             .receipt-wrapper {
-              width: 48mm;
-              max-width: 48mm;
-              min-width: 48mm;
+              width: 57mm;
+              max-width: 57mm;
+              min-width: 57mm;
               margin: 0 auto;
-              padding: 3mm 2mm;
+              padding: 4mm 3mm;
               background: white;
             }
             
             .header {
               text-align: center;
-              margin-bottom: 5px;
+              margin-bottom: 6px;
             }
             
             .header h1 {
-              font-size: 11pt;
+              font-size: 12pt;
               font-weight: bold;
-              margin-bottom: 3px;
-              line-height: 1.3;
+              margin-bottom: 4px;
+              line-height: 1.2;
+              word-wrap: break-word;
             }
             
             .header p {
-              font-size: 8pt;
+              font-size: 9pt;
               margin: 2px 0;
-              line-height: 1.3;
+              line-height: 1.2;
+              word-wrap: break-word;
             }
             
             .divider {
               border-top: 1px dashed #666;
-              margin: 5px 0;
+              margin: 6px 0;
             }
             
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin: 3px 0;
-              font-size: 8pt;
-              line-height: 1.4;
+              margin: 4px 0;
+              font-size: 9pt;
+              line-height: 1.3;
+              word-wrap: break-word;
             }
             
             table {
               width: 100%;
               border-collapse: collapse;
-              margin: 5px 0;
-              font-size: 8pt;
+              margin: 6px 0;
+              font-size: 9pt;
               table-layout: fixed;
             }
             
             th:first-child, td:first-child {
-              width: 55%;
+              width: 50%;
               word-wrap: break-word;
               overflow-wrap: break-word;
-              padding-right: 2px;
+              padding-right: 3px;
             }
             
             th:nth-child(2), td:nth-child(2) {
-              width: 15%;
+              width: 18%;
               text-align: center;
             }
             
             th:nth-child(3), td:nth-child(3) {
-              width: 30%;
+              width: 32%;
               text-align: right;
             }
             
             th, td {
-              padding: 3px 2px;
+              padding: 4px 3px;
               text-align: left;
-              line-height: 1.4;
+              line-height: 1.3;
               vertical-align: top;
             }
             
             th {
               border-bottom: 1px solid #333;
               font-weight: bold;
-              font-size: 8pt;
-              padding-bottom: 4px;
+              font-size: 9pt;
+              padding-bottom: 5px;
             }
             
             td {
               border-bottom: 1px solid #ddd;
-              font-size: 8pt;
-              padding-top: 4px;
-              padding-bottom: 4px;
+              font-size: 9pt;
+              padding-top: 5px;
+              padding-bottom: 5px;
             }
             
             .text-right {
@@ -228,34 +231,42 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             .totals {
-              margin: 5px 0;
+              margin: 6px 0;
             }
             
             .total-row {
               display: flex;
               justify-content: space-between;
-              margin: 4px 0;
-              font-size: 8pt;
-              line-height: 1.4;
+              margin: 5px 0;
+              font-size: 9pt;
+              line-height: 1.3;
+              word-wrap: break-word;
             }
             
             .total-final {
               border-top: 2px solid #333;
-              padding-top: 5px;
-              margin-top: 5px;
-              font-size: 11pt;
+              padding-top: 6px;
+              margin-top: 6px;
+              font-size: 12pt;
               font-weight: bold;
             }
             
             .footer {
               text-align: center;
-              margin-top: 8px;
-              font-size: 7pt;
-              line-height: 1.4;
+              margin-top: 10px;
+              font-size: 8pt;
+              line-height: 1.3;
             }
             
             small {
-              font-size: 7pt;
+              font-size: 8pt;
+            }
+            
+            /* Ensure text doesn't overflow */
+            * {
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              max-width: 100%;
             }
           </style>
         </head>
@@ -293,16 +304,24 @@ const Receipt: React.FC<ReceiptProps> = ({
                 </tr>
               </thead>
               <tbody>
-                ${items.map(item => `
+                ${items.map(item => {
+                  // Truncate long product names to fit 57mm width (max ~28 chars)
+                  const maxNameLength = 28;
+                  const productName = item.productName.length > maxNameLength 
+                    ? item.productName.substring(0, maxNameLength - 3) + '...'
+                    : item.productName;
+                  
+                  return `
                   <tr>
-                    <td style="word-break: break-word;">
-                      ${item.productName}
-                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Discount: ₱${item.discountAmount.toFixed(2)}</small>` : ''}
+                    <td style="word-break: break-word; overflow-wrap: break-word;">
+                      ${productName}
+                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Disc: -₱${item.discountAmount.toFixed(2)}</small>` : ''}
                     </td>
                     <td class="text-center">${item.quantity}</td>
                     <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
                   </tr>
-                `).join('')}
+                `;
+                }).join('')}
               </tbody>
             </table>
             <div class="divider"></div>
@@ -313,7 +332,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${isSeniorPWDActive && discount > 0 ? `
               <div class="total-row" style="color: red;">
-                <span>Senior/PWD Discount (20%):</span>
+                <span>Senior/PWD Disc (20%):</span>
                 <span>-₱${discount.toFixed(2)}</span>
               </div>
               ` : ''}
