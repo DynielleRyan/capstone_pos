@@ -128,8 +128,8 @@ const Receipt: React.FC<ReceiptProps> = ({
             
             body {
               font-family: 'Courier New', monospace;
-              font-size: 10pt;
-              line-height: 1.3;
+              font-size: 11pt;
+              line-height: 1.4;
               color: #000;
               background: white;
               padding: 0 !important;
@@ -144,7 +144,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               max-width: 57mm;
               min-width: 57mm;
               margin: 0;
-              padding: 2mm 2mm;
+              padding: 3mm 2.5mm;
               background: white;
               box-sizing: border-box;
             }
@@ -156,10 +156,10 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             .header h1 {
-              font-size: 12pt;
+              font-size: 13pt;
               font-weight: bold;
               margin-bottom: 4px;
-              line-height: 1.2;
+              line-height: 1.3;
               word-wrap: break-word;
               overflow-wrap: break-word;
               hyphens: auto;
@@ -167,9 +167,9 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             .header p {
-              font-size: 9pt;
+              font-size: 10pt;
               margin: 2px 0;
-              line-height: 1.2;
+              line-height: 1.3;
               word-wrap: break-word;
               overflow-wrap: break-word;
               hyphens: auto;
@@ -184,23 +184,35 @@ const Receipt: React.FC<ReceiptProps> = ({
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin: 4px 0;
-              font-size: 9pt;
-              line-height: 1.3;
+              margin: 5px 0;
+              font-size: 10pt;
+              line-height: 1.4;
               word-wrap: break-word;
             }
             
             .info-row span:first-child {
-              flex: 1;
+              flex: 0 0 auto;
+              min-width: 0;
               word-wrap: break-word;
               overflow-wrap: break-word;
-              padding-right: 5px;
+              padding-right: 8px;
+              max-width: 45%;
             }
             
             .info-row span:last-child {
-              white-space: nowrap;
-              flex-shrink: 0;
+              flex: 1;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
               text-align: right;
+              min-width: 0;
+              max-width: 55%;
+            }
+            
+            /* Special handling for long transaction IDs */
+            .info-row.transaction-id span:last-child {
+              font-size: 9pt;
+              word-break: break-all;
+              overflow-wrap: anywhere;
             }
             
             table {
@@ -208,7 +220,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               max-width: 100%;
               border-collapse: collapse;
               margin: 6px 0;
-              font-size: 9pt;
+              font-size: 10pt;
               table-layout: fixed;
               box-sizing: border-box;
             }
@@ -242,14 +254,14 @@ const Receipt: React.FC<ReceiptProps> = ({
             th {
               border-bottom: 1px solid #333;
               font-weight: bold;
-              font-size: 9pt;
+              font-size: 10pt;
               padding-bottom: 5px;
               word-wrap: break-word;
             }
             
             td {
               border-bottom: 1px solid #ddd;
-              font-size: 9pt;
+              font-size: 10pt;
               padding-top: 5px;
               padding-bottom: 5px;
               overflow: visible;
@@ -277,8 +289,8 @@ const Receipt: React.FC<ReceiptProps> = ({
               display: flex;
               justify-content: space-between;
               margin: 5px 0;
-              font-size: 9pt;
-              line-height: 1.3;
+              font-size: 10pt;
+              line-height: 1.4;
               word-wrap: break-word;
             }
             
@@ -299,24 +311,24 @@ const Receipt: React.FC<ReceiptProps> = ({
               border-top: 2px solid #333;
               padding-top: 6px;
               margin-top: 6px;
-              font-size: 12pt;
+              font-size: 13pt;
               font-weight: bold;
             }
             
             .total-final span:last-child {
-              font-size: 12pt;
+              font-size: 13pt;
               white-space: nowrap;
             }
             
             .footer {
               text-align: center;
               margin-top: 10px;
-              font-size: 8pt;
-              line-height: 1.3;
+              font-size: 9pt;
+              line-height: 1.4;
             }
             
             small {
-              font-size: 8pt;
+              font-size: 9pt;
             }
             
             /* Ensure text doesn't overflow */
@@ -345,12 +357,12 @@ const Receipt: React.FC<ReceiptProps> = ({
             </div>
             <div class="divider"></div>
             <div class="info-row">
-              <span>Receipt No:</span>
+              <span>Receipt:</span>
               <span><strong>${referenceNo}</strong></span>
             </div>
-            <div class="info-row">
-              <span>Transaction ID:</span>
-              <span><strong>${transactionId}</strong></span>
+            <div class="info-row transaction-id">
+              <span>Trans ID:</span>
+              <span><strong>${transactionId.length > 20 ? transactionId.substring(0, 17) + '...' : transactionId}</strong></span>
             </div>
             <div class="info-row">
               <span>Date & Time:</span>
