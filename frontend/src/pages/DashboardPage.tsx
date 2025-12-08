@@ -135,40 +135,40 @@ const DashboardPage = () => {
 
   // Fetch products from backend API - can be called on mount or after transactions
   const fetchProducts = useCallback(async (showLoading = true) => {
-    try {
+      try {
       if (showLoading) {
         setLoading(true);
       }
-      const response = await api.get('/products');
-      console.log('Products fetched:', response.data); // Debug log
-      
-      // Fetch stock for each product
-      const productsWithStock = await Promise.all(
-        response.data.map(async (product: Product) => {
-          try {
-            const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
-            return {
-              ...product,
-              stock: stockResponse.data.totalStock || 0
-            };
-          } catch (err) {
-            console.error(`Error fetching stock for product ${product.ProductID}:`, err);
-            return {
-              ...product,
-              stock: 0
-            };
-          }
-        })
-      );
-      
-      setProducts(productsWithStock);
-      setError('');
-    } catch (err) {
-      console.error('Error fetching products:', err);
-      setError('Failed to load products');
-      // Keep products array empty if API fails
-      setProducts([]);
-    } finally {
+        const response = await api.get('/products');
+        console.log('Products fetched:', response.data); // Debug log
+        
+        // Fetch stock for each product
+        const productsWithStock = await Promise.all(
+          response.data.map(async (product: Product) => {
+            try {
+              const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
+              return {
+                ...product,
+                stock: stockResponse.data.totalStock || 0
+              };
+            } catch (err) {
+              console.error(`Error fetching stock for product ${product.ProductID}:`, err);
+              return {
+                ...product,
+                stock: 0
+              };
+            }
+          })
+        );
+        
+        setProducts(productsWithStock);
+        setError('');
+      } catch (err) {
+        console.error('Error fetching products:', err);
+        setError('Failed to load products');
+        // Keep products array empty if API fails
+        setProducts([]);
+      } finally {
       if (showLoading) {
         setLoading(false);
       }
@@ -352,7 +352,7 @@ const DashboardPage = () => {
   const handleConfirmClearCart = () => {
     clearCartSilently();
     setShowClearCartModal(false);
-    toast.success('Cart cleared successfully');
+      toast.success('Cart cleared successfully');
   };
 
   // Handle confirmed Senior/PWD ID input
@@ -989,37 +989,37 @@ const DashboardPage = () => {
             </label>
             {selectedPaymentMethod !== 'cash' && (
               <>
-                <div className="flex">
-                  {selectedPaymentMethod && (
-                    <span className="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-r-0 border-gray-300 rounded-l-md">
+            <div className="flex">
+              {selectedPaymentMethod && (
+                <span className="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-r-0 border-gray-300 rounded-l-md">
                       {selectedPaymentMethod === 'gcash' ? 'GCASH-' : 'MAYA-'}
-                    </span>
-                  )}
-                  <input
-                    type="text"
-                    placeholder={selectedPaymentMethod ? "Enter reference number" : "Select payment method first"}
-                    value={referenceNumber}
-                    onChange={handleReferenceNumberChange}
-                    disabled={!selectedPaymentMethod}
-                    className={`flex-1 p-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      selectedPaymentMethod ? 'rounded-l-none' : 'rounded-l-md'
-                    } ${
-                      !selectedPaymentMethod 
-                        ? 'bg-gray-100 cursor-not-allowed border-gray-300' 
-                        : !referenceNumber.trim() 
-                          ? 'border-red-300 bg-red-50' 
-                          : 'border-gray-300'
-                    }`}
-                    required
-                  />
-                </div>
-                {selectedPaymentMethod && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Enter the reference number from the {selectedPaymentMethod} payment device
-                    <br />
-                    <span className="text-gray-400">
+                </span>
+              )}
+              <input
+                type="text"
+                placeholder={selectedPaymentMethod ? "Enter reference number" : "Select payment method first"}
+                value={referenceNumber}
+                onChange={handleReferenceNumberChange}
+                disabled={!selectedPaymentMethod}
+                className={`flex-1 p-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  selectedPaymentMethod ? 'rounded-l-none' : 'rounded-l-md'
+                } ${
+                  !selectedPaymentMethod 
+                    ? 'bg-gray-100 cursor-not-allowed border-gray-300' 
+                    : !referenceNumber.trim() 
+                      ? 'border-red-300 bg-red-50' 
+                      : 'border-gray-300'
+                }`}
+                required
+              />
+            </div>
+            {selectedPaymentMethod && (
+              <p className="text-xs text-gray-500 mt-1">
+                Enter the reference number from the {selectedPaymentMethod} payment device
+                <br />
+                <span className="text-gray-400">
                       Example: {selectedPaymentMethod === 'gcash' ? 'GCASH-67890' : 'MAYA-54321'}
-                    </span>
+                </span>
                   </p>
                 )}
               </>

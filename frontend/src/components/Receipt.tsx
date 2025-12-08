@@ -98,11 +98,18 @@ const Receipt: React.FC<ReceiptProps> = ({
               body {
                 print-color-adjust: exact;
                 -webkit-print-color-adjust: exact;
+                margin: 0;
+                padding: 0;
+                width: 57mm;
               }
               
               .receipt-wrapper {
                 page-break-inside: avoid;
                 break-inside: avoid;
+                margin: 0;
+                padding: 2mm 2mm;
+                width: 57mm;
+                max-width: 57mm;
               }
             }
             
@@ -127,24 +134,25 @@ const Receipt: React.FC<ReceiptProps> = ({
               background: white;
               padding: 0 !important;
               margin: 0 !important;
-              display: flex;
-              justify-content: center;
-              align-items: flex-start;
+              display: block;
+              width: 100%;
             }
             
-            /* Receipt container - exactly 57mm wide */
+            /* Receipt container - exactly 57mm wide, left-aligned for thermal printers */
             .receipt-wrapper {
               width: 57mm;
               max-width: 57mm;
               min-width: 57mm;
-              margin: 0 auto;
-              padding: 4mm 3mm;
+              margin: 0;
+              padding: 2mm 2mm;
               background: white;
+              box-sizing: border-box;
             }
             
             .header {
               text-align: center;
               margin-bottom: 6px;
+              width: 100%;
             }
             
             .header h1 {
@@ -197,10 +205,12 @@ const Receipt: React.FC<ReceiptProps> = ({
             
             table {
               width: 100%;
+              max-width: 100%;
               border-collapse: collapse;
               margin: 6px 0;
               font-size: 9pt;
               table-layout: fixed;
+              box-sizing: border-box;
             }
             
             th:first-child, td:first-child {
