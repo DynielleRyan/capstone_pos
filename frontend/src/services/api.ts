@@ -91,7 +91,7 @@ api.interceptors.response.use(
           if (!isRedirecting) {
             isRedirecting = true;
             try {
-              await supabase.auth.signOut();
+      await supabase.auth.signOut();
               // Use replace to prevent back button issues
               window.location.replace('/login');
             } catch (err) {

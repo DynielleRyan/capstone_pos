@@ -34,7 +34,7 @@ const LoginPage = () => {
     console.log('OTP Modal state changed:', showOTPModal);
     if (showOTPModal) {
       console.log('OTP Modal should be visible now. showOTPModal =', showOTPModal);
-    }
+      }
   }, [showOTPModal]);
 
   // Note: Session check is handled by PublicRoute component in App.tsx
@@ -118,7 +118,7 @@ const LoginPage = () => {
             status: checkError.response?.status
           });
           // If check fails, proceed with normal login
-          navigate('/dashboard');
+        navigate('/dashboard');
         }
       }
     } catch (err: any) {

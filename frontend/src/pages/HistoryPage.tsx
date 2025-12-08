@@ -113,51 +113,51 @@ const HistoryPage = () => {
 
   // Fetch transactions from API with pagination
   const fetchTransactions = async (page: number = 1) => {
-    try {
-      setLoading(true);
+      try {
+        setLoading(true);
       const response = await api.get(`/transactions?page=${page}&limit=${itemsPerPage}&t=${Date.now()}`);
       
       // Handle new paginated response structure
       const responseData = response.data.success ? response.data : { data: response.data, pagination: null };
       const transactionsData = responseData.data || [];
       const pagination = responseData.pagination;
-      
-      // Transform the API response to match our interface
+        
+        // Transform the API response to match our interface
       // Only include preview item (first item) - full items loaded lazily
       const transformedTransactions = transactionsData.map((transaction: any) => ({
-        TransactionID: transaction.TransactionID,
-        ReferenceNo: transaction.ReferenceNo,
-        PaymentMethod: transaction.PaymentMethod,
-        Total: transaction.Total,
-        OrderDateTime: transaction.OrderDateTime,
+          TransactionID: transaction.TransactionID,
+          ReferenceNo: transaction.ReferenceNo,
+          PaymentMethod: transaction.PaymentMethod,
+          Total: transaction.Total,
+          OrderDateTime: transaction.OrderDateTime,
         Status: 'completed',
         // Only include preview item (first item) for list view
         Items: transaction.Transaction_Item?.slice(0, 1).map((item: any) => ({
-          ProductName: item.Product?.Name || 'Unknown Product',
-          Quantity: item.Quantity,
-          UnitPrice: item.UnitPrice,
-          Subtotal: item.Subtotal,
-          VATAmount: item.VATAmount || 0,
-          DiscountAmount: item.DiscountAmount || 0,
+            ProductName: item.Product?.Name || 'Unknown Product',
+            Quantity: item.Quantity,
+            UnitPrice: item.UnitPrice,
+            Subtotal: item.Subtotal,
+            VATAmount: item.VATAmount || 0,
+            DiscountAmount: item.DiscountAmount || 0,
           Image: undefined // No images in list view for performance
         })) || [],
         ItemCount: transaction.ItemCount || transaction.Transaction_Item?.length || 0
-      }));
-      
-      setTransactions(transformedTransactions);
+        }));
+        
+        setTransactions(transformedTransactions);
       
       // Update pagination state
       if (pagination) {
         setTotalPages(pagination.totalPages || 1);
         setTotalTransactions(pagination.total || 0);
       }
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-      setTransactions([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+      } catch (error) {
+        console.error('Error fetching transactions:', error);
+        setTransactions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
 
   // Fetch transactions on mount and when page changes
   useEffect(() => {
@@ -734,7 +734,7 @@ const HistoryPage = () => {
             <span className="text-sm text-gray-500 ml-4">
               Page {currentPage} of {totalPages} ({totalTransactions} total)
             </span>
-          </div>
+        </div>
         )}
       </div>
 

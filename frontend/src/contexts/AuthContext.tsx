@@ -70,11 +70,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error: any) {
       // Don't log 401 errors as they're handled by the interceptor
       if (error.response?.status !== 401) {
-        console.error('Failed to fetch profile:', error);
+      console.error('Failed to fetch profile:', error);
       }
       // Only clear profile if it's not a 401 (401 means unauthenticated, handled by interceptor)
       if (error.response?.status !== 401) {
-        setProfile(null);
+      setProfile(null);
         profileFetchedRef.current = false;
       }
     } finally {
@@ -107,14 +107,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         const { session } = await auth.getSession();
         if (mounted) {
-          setSession(session);
-          setUser(session?.user ?? null);
+        setSession(session);
+        setUser(session?.user ?? null);
         }
       } catch (error) {
         console.error('Error getting initial session:', error);
       } finally {
         if (mounted) {
-          setLoading(false);
+        setLoading(false);
         }
       }
     };
@@ -137,7 +137,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setSession(session);
         const newUser = session?.user ?? null;
         setUser(newUser);
-        
+      
         if (!newUser) {
           // User logged out - clear everything
           setProfile(null);
@@ -145,12 +145,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           profileFetchedRef.current = false;
           isFetchingProfileRef.current = false;
           profileFetchErrorCountRef.current = 0; // Reset error count
-        } else {
+      } else {
           // User changed - reset fetch flag to allow new fetch
           if (previousUserIdRef.current !== newUser.id) {
             profileFetchedRef.current = false;
             profileFetchErrorCountRef.current = 0; // Reset error count for new user
-          }
+      }
         }
       }, 100); // 100ms debounce for auth state changes
     });
