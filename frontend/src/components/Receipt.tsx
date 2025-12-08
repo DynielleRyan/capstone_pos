@@ -153,6 +153,9 @@ const Receipt: React.FC<ReceiptProps> = ({
               margin-bottom: 4px;
               line-height: 1.2;
               word-wrap: break-word;
+              overflow-wrap: break-word;
+              hyphens: auto;
+              max-width: 100%;
             }
             
             .header p {
@@ -160,6 +163,9 @@ const Receipt: React.FC<ReceiptProps> = ({
               margin: 2px 0;
               line-height: 1.2;
               word-wrap: break-word;
+              overflow-wrap: break-word;
+              hyphens: auto;
+              max-width: 100%;
             }
             
             .divider {
@@ -176,6 +182,19 @@ const Receipt: React.FC<ReceiptProps> = ({
               word-wrap: break-word;
             }
             
+            .info-row span:first-child {
+              flex: 1;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              padding-right: 5px;
+            }
+            
+            .info-row span:last-child {
+              white-space: nowrap;
+              flex-shrink: 0;
+              text-align: right;
+            }
+            
             table {
               width: 100%;
               border-collapse: collapse;
@@ -185,20 +204,21 @@ const Receipt: React.FC<ReceiptProps> = ({
             }
             
             th:first-child, td:first-child {
-              width: 50%;
+              width: 45%;
               word-wrap: break-word;
               overflow-wrap: break-word;
               padding-right: 3px;
             }
             
             th:nth-child(2), td:nth-child(2) {
-              width: 18%;
+              width: 15%;
               text-align: center;
             }
             
             th:nth-child(3), td:nth-child(3) {
-              width: 32%;
+              width: 40%;
               text-align: right;
+              white-space: nowrap;
             }
             
             th, td {
@@ -206,6 +226,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               text-align: left;
               line-height: 1.3;
               vertical-align: top;
+              overflow: visible;
             }
             
             th {
@@ -213,6 +234,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               font-weight: bold;
               font-size: 9pt;
               padding-bottom: 5px;
+              word-wrap: break-word;
             }
             
             td {
@@ -220,6 +242,13 @@ const Receipt: React.FC<ReceiptProps> = ({
               font-size: 9pt;
               padding-top: 5px;
               padding-bottom: 5px;
+              overflow: visible;
+              word-wrap: break-word;
+            }
+            
+            td.text-right {
+              white-space: nowrap;
+              overflow: visible;
             }
             
             .text-right {
@@ -243,12 +272,30 @@ const Receipt: React.FC<ReceiptProps> = ({
               word-wrap: break-word;
             }
             
+            .total-row span:first-child {
+              flex: 1;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              padding-right: 5px;
+            }
+            
+            .total-row span:last-child {
+              white-space: nowrap;
+              flex-shrink: 0;
+              text-align: right;
+            }
+            
             .total-final {
               border-top: 2px solid #333;
               padding-top: 6px;
               margin-top: 6px;
               font-size: 12pt;
               font-weight: bold;
+            }
+            
+            .total-final span:last-child {
+              font-size: 12pt;
+              white-space: nowrap;
             }
             
             .footer {
@@ -266,7 +313,16 @@ const Receipt: React.FC<ReceiptProps> = ({
             * {
               word-wrap: break-word;
               overflow-wrap: break-word;
-              max-width: 100%;
+            }
+            
+            /* Prevent numbers from wrapping */
+            .text-right, [class*="text-right"] {
+              white-space: nowrap;
+            }
+            
+            /* Ensure prices always show full value including centavos */
+            strong, .total-final span:last-child {
+              white-space: nowrap;
             }
           </style>
         </head>
@@ -305,20 +361,16 @@ const Receipt: React.FC<ReceiptProps> = ({
               </thead>
               <tbody>
                 ${items.map(item => {
-                  // Truncate long product names to fit 57mm width (max ~28 chars)
-                  const maxNameLength = 28;
-                  const productName = item.productName.length > maxNameLength 
-                    ? item.productName.substring(0, maxNameLength - 3) + '...'
-                    : item.productName;
-                  
+                  // Don't truncate - let CSS handle wrapping
+                  // For 57mm width, we can fit more characters with proper wrapping
                   return `
                   <tr>
-                    <td style="word-break: break-word; overflow-wrap: break-word;">
-                      ${productName}
+                    <td style="word-break: break-word; overflow-wrap: break-word; hyphens: auto;">
+                      ${item.productName}
                       ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Disc: -₱${item.discountAmount.toFixed(2)}</small>` : ''}
                     </td>
                     <td class="text-center">${item.quantity}</td>
-                    <td class="text-right"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
+                    <td class="text-right" style="white-space: nowrap;"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
                   </tr>
                 `;
                 }).join('')}
