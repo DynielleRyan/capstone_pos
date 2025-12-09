@@ -434,9 +434,9 @@ const DashboardPage = () => {
       // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
       // 2. If product has IsVATExemptYN = true, VAT = 0
       // 3. Otherwise, VAT = 12% of (itemSubtotal - itemDiscount)
-      // Handle boolean, string, or null values
-      const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
-      const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+      // Handle boolean or undefined values
+      const seniorPWDYN = item.seniorPWDYN === true;
+      const isVATExemptYN = item.isVATExemptYN === true;
       
       let itemVAT = 0;
       if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
@@ -457,9 +457,9 @@ const DashboardPage = () => {
       const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
       
       // If item has no VAT (either IsVATExemptYN or SeniorPWDYN when active)
-      // Handle boolean, string, or null values
-      const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
-      const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+      // Handle boolean or undefined values
+      const seniorPWDYN = item.seniorPWDYN === true;
+      const isVATExemptYN = item.isVATExemptYN === true;
       const hasNoVAT = isVATExemptYN || (isSeniorPWDActive && seniorPWDYN);
       if (hasNoVAT) {
         return totalExempt + (itemSubtotal - itemDiscount);
@@ -587,9 +587,9 @@ const DashboardPage = () => {
           const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
           
           // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
-          // Handle boolean, string, or null values
-          const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
-          const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+          // Handle boolean or undefined values
+          const seniorPWDYN = item.seniorPWDYN === true;
+          const isVATExemptYN = item.isVATExemptYN === true;
           
           let itemVAT = 0;
           if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
@@ -953,8 +953,8 @@ const DashboardPage = () => {
                 const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
                 
                 // Check if item has VAT
-                const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
-                const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+                const seniorPWDYN = item.seniorPWDYN === true;
+                const isVATExemptYN = item.isVATExemptYN === true;
                 const hasVAT = !isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN);
                 const itemVAT = hasVAT ? (itemSubtotal - itemDiscount) * 0.12 : 0;
                 const itemTotal = itemSubtotal - itemDiscount + itemVAT;
