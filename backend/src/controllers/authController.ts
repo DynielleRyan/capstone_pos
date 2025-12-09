@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabase } from '../utils/database';
 import { createClient } from '@supabase/supabase-js';
 import { sendOTPEmail, isEmailServiceConfigured } from '../utils/emailService';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -459,20 +460,14 @@ export const confirmUserEmail = async (req: Request, res: Response) => {
 // Verify pharmacist/admin credentials for clerk authorization
 export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
     try {
-        console.log('=== Verification endpoint called ===');
-        console.log('Request body:', { username: req.body?.username, hasPassword: !!req.body?.password });
-        
         const { username, password } = req.body;
 
         if (!username || !password) {
-            console.log('Missing username or password');
             return res.status(400).json({
                 success: false,
                 message: "Username and password are required"
             });
         }
-
-        console.log('Verification attempt for username/email:', username);
 
         // Check if input looks like an email
         const isEmail = username.includes('@');
@@ -482,8 +477,6 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
 
         if (isEmail) {
             // If input is an email, find user by email in Supabase Auth first
-            console.log('Input appears to be an email, looking up by email...');
-            
             // Get all users from Supabase Auth and find matching email
             // Then find corresponding User record
             const { data: allUsers } = await supabase
@@ -497,7 +490,6 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
                         const { data: authUser } = await supabase.auth.admin.getUserById(user.AuthUserID);
                         if (authUser?.user?.email?.toLowerCase() === username.toLowerCase()) {
                             userRecord = user;
-                            console.log('Found user by email:', authUser.user?.email);
                             break;
                         }
                     } catch (err) {
@@ -538,7 +530,6 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
         }
 
         if (userError || !userRecord) {
-            console.log('User not found for username:', username, 'Error:', userError);
             // Return more specific error
             return res.status(401).json({
                 success: false,
@@ -546,27 +537,13 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
             });
         }
 
-        console.log('User found:', {
-            UserID: userRecord.UserID,
-            Roles: userRecord.Roles,
-            PharmacistYN: userRecord.PharmacistYN
-        });
-
         // Check if user is pharmacist or admin
         const isPharmacist = userRecord.PharmacistYN === true;
         const roleLower = userRecord.Roles?.toLowerCase() || '';
         const isAdmin = roleLower === 'admin';
         const isPharmacistRole = roleLower === 'pharmacist';
 
-        console.log('Role check:', {
-            isPharmacist,
-            isAdmin,
-            isPharmacistRole,
-            roleValue: userRecord.Roles
-        });
-
         if (!isPharmacist && !isAdmin && !isPharmacistRole) {
-            console.log('User does not have required role');
             return res.status(403).json({
                 success: false,
                 message: "Only pharmacist or admin accounts can authorize this action"
@@ -577,12 +554,6 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
         const { data: authUser, error: authUserError } = await supabase.auth.admin.getUserById(userRecord.AuthUserID);
 
         if (authUserError || !authUser?.user || !authUser.user.email) {
-            console.log('Error getting auth user:', {
-                error: authUserError,
-                authUserID: userRecord.AuthUserID,
-                hasAuthUser: !!authUser,
-                hasEmail: !!authUser?.user?.email
-            });
             return res.status(401).json({
                 success: false,
                 message: "Unable to verify account. The account may not be properly linked. Please contact administrator."
@@ -591,12 +562,10 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
 
         // At this point, we know authUser.user and authUser.user.email are not null
         const userEmail = authUser.user.email;
-        console.log('Auth user email found:', userEmail);
 
         // Create a completely isolated client instance for verification
         // This prevents any interference with existing sessions
         if (!supabaseUrl || !supabaseAnonKey) {
-            console.error('Missing Supabase configuration');
             return res.status(500).json({
                 success: false,
                 message: "Server configuration error"
@@ -612,21 +581,13 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
         });
 
         // Verify password by attempting to sign in with isolated client
-        console.log('Attempting password verification for email:', userEmail);
         const { data: signInData, error: signInError } = await isolatedClient.auth.signInWithPassword({
             email: userEmail,
             password: password
         });
 
         if (signInError || !signInData?.user) {
-            console.log('Password verification failed:', {
-                message: signInError?.message,
-                status: signInError?.status,
-                name: signInError?.name,
-                email: userEmail
-            });
-            
-            // Provide more specific error message
+            // Industry standard: User-friendly error messages
             let errorMessage = "Invalid password. Please check your credentials and try again.";
             if (signInError?.message) {
                 if (signInError.message.includes('Invalid login credentials')) {
@@ -643,8 +604,6 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
                 message: errorMessage
             });
         }
-
-        console.log('Password verification successful');
 
         // Sign out the isolated session immediately
         await isolatedClient.auth.signOut();
@@ -672,6 +631,7 @@ export const verifyPharmacistAdmin = async (req: Request, res: Response) => {
 };
 
 // Check if user requires first-time login OTP
+// Industry Standard: Uses httpOnly cookie for device tracking
 export const checkFirstLogin = async (req: Request, res: Response) => {
     try {
         const authHeader = req.headers.authorization;
@@ -693,7 +653,6 @@ export const checkFirstLogin = async (req: Request, res: Response) => {
         }
 
         // Get user profile to check first login status
-        // Try to get HasCompletedFirstLogin, but handle case where column might not exist
         const { data: userProfile, error: profileError } = await supabase
             .from('User')
             .select('UserID, HasCompletedFirstLogin')
@@ -701,10 +660,8 @@ export const checkFirstLogin = async (req: Request, res: Response) => {
             .single();
 
         if (profileError || !userProfile) {
-            console.log('User profile error:', profileError);
             // If column doesn't exist, treat as first login
             if (profileError?.code === 'PGRST116' || profileError?.message?.includes('column') || profileError?.message?.includes('HasCompletedFirstLogin')) {
-                console.log('HasCompletedFirstLogin column may not exist - treating as first login');
                 return res.json({
                     success: true,
                     data: {
@@ -720,37 +677,72 @@ export const checkFirstLogin = async (req: Request, res: Response) => {
             });
         }
 
-        console.log('User profile found:', {
-            UserID: userProfile.UserID,
-            HasCompletedFirstLogin: userProfile.HasCompletedFirstLogin
-        });
+        // Industry Standard: Check for httpOnly cookie (device token)
+        // This cookie cannot be cleared by JavaScript and persists across sessions
+        const deviceToken = req.cookies?.[`device_token_${userProfile.UserID}`];
+        
+        let isDeviceTrusted = false;
+        
+        if (deviceToken) {
+            try {
+                // Verify the device token exists in database and is valid
+                const { data: trustedDevice, error: deviceError } = await supabase
+                    .from('TrustedDevices')
+                    .select('DeviceID, IsTrusted, LastUsedAt')
+                    .eq('UserID', userProfile.UserID)
+                    .eq('DeviceIdentifier', deviceToken)
+                    .eq('IsTrusted', true)
+                    .single();
+
+                if (!deviceError && trustedDevice) {
+                    isDeviceTrusted = true;
+                    // Update last used timestamp
+                    await supabase
+                        .from('TrustedDevices')
+                        .update({ LastUsedAt: new Date().toISOString() })
+                        .eq('DeviceID', trustedDevice.DeviceID);
+                } else {
+                    // Cookie exists but not in database - clear the invalid cookie
+                    res.clearCookie(`device_token_${userProfile.UserID}`, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'strict'
+                    });
+                }
+            } catch (deviceCheckError) {
+                // If TrustedDevices table doesn't exist, continue with legacy check
+                // Silently fail - table may not be migrated yet
+            }
+        }
 
         // Check if HasCompletedFirstLogin field exists and is false/null
-        // If the field doesn't exist in the result, treat as first login
         const hasCompletedFirstLogin = userProfile.HasCompletedFirstLogin !== undefined 
             ? (userProfile.HasCompletedFirstLogin ?? false)
-            : false; // If field doesn't exist, default to false (first login)
-        const requiresOTP = !hasCompletedFirstLogin;
+            : false;
 
-        console.log('First login check result:', {
-            hasCompletedFirstLogin,
-            requiresOTP,
-            fieldExists: userProfile.HasCompletedFirstLogin !== undefined
-        });
+        // Industry Standard: Require OTP if:
+        // 1. User hasn't completed first login globally, OR
+        // 2. No valid device token cookie exists (new browser/device or cookie cleared)
+        const requiresOTP = !hasCompletedFirstLogin || !isDeviceTrusted;
 
         res.json({
             success: true,
             data: {
                 requiresOTP,
-                hasCompletedFirstLogin: hasCompletedFirstLogin
+                hasCompletedFirstLogin: hasCompletedFirstLogin,
+                isDeviceTrusted: isDeviceTrusted
             }
         });
 
     } catch (error) {
-        console.error('Check first login error:', error);
+        // Industry standard: Log error details for debugging but return user-friendly message
+        console.error('Check first login error:', {
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
         res.status(500).json({
             success: false,
-            message: 'Internal Server Error'
+            message: 'An error occurred while checking login status. Please try again.'
         });
     }
 };
@@ -790,30 +782,25 @@ export const sendOTP = async (req: Request, res: Response) => {
         });
 
         // Send OTP via email using SendGrid
-        console.log(`📧 Attempting to send OTP to ${user.email}...`);
         const emailSent = await sendOTPEmail({
             to: user.email,
             otp: otp,
             userName: user.user_metadata?.first_name || user.user_metadata?.username
         });
 
-        console.log(`📧 Email send result: ${emailSent}, SendGrid configured: ${isEmailServiceConfigured()}`);
-
         if (!emailSent && !isEmailServiceConfigured()) {
             // If SendGrid is not configured, return OTP in development mode only
-            console.log(`📧 OTP for ${user.email}: ${otp}`);
             res.json({
                 success: true,
                 message: "Verification code sent to your email",
                 // Only include OTP in development when SendGrid is not configured
-                ...(process.env.NODE_ENV === 'development' && { otp, warning: 'SendGrid not configured - OTP logged to console' })
+                ...(process.env.NODE_ENV === 'development' && { otp, warning: 'SendGrid not configured - OTP provided for development' })
             });
         } else if (!emailSent) {
             // SendGrid is configured but email failed
-            console.error('❌ SendGrid is configured but email sending failed');
             res.status(500).json({
                 success: false,
-                message: "Failed to send verification email. Please try again or contact support.",
+                message: "Unable to send verification email. Please try again or contact support.",
                 ...(process.env.NODE_ENV === 'development' && { 
                     otp: otp, 
                     warning: 'Email failed - OTP provided for development' 
@@ -828,23 +815,15 @@ export const sendOTP = async (req: Request, res: Response) => {
         }
 
     } catch (error: any) {
-        console.error('❌ Error in sendOTP:', error);
-        console.error('Error details:', {
-            message: error?.message,
-            stack: error?.stack,
-            response: error?.response?.data,
-            code: error?.code,
-            name: error?.name
+        // Industry standard: Log error details for debugging but return user-friendly message
+        // Note: user may not be available in catch block if error occurred before user was retrieved
+        console.error('Error in sendOTP:', {
+            message: error?.message
         });
-        
-        // If it's a SendGrid error, provide more details
-        if (error?.response) {
-            console.error('SendGrid API Error Details:', JSON.stringify(error.response.body, null, 2));
-        }
         
         res.status(500).json({
             success: false,
-            message: "An error occurred while sending the verification code",
+            message: "An error occurred while sending the verification code. Please try again.",
             error: process.env.NODE_ENV === 'development' ? error?.message : undefined
         });
     }
@@ -920,7 +899,7 @@ export const verifyOTP = async (req: Request, res: Response) => {
             });
         }
 
-        // Update user to mark first login as complete
+        // Update user to mark first login as complete (if not already done)
         await supabase
             .from('User')
             .update({ 
@@ -928,6 +907,74 @@ export const verifyOTP = async (req: Request, res: Response) => {
                 UpdatedAt: new Date().toISOString()
             })
             .eq('UserID', userProfile.UserID);
+
+        // Industry Standard: Generate a secure device token (server-side)
+        // This token is stored in an httpOnly cookie that cannot be accessed by JavaScript
+        const deviceToken = crypto.randomBytes(32).toString('hex');
+        const deviceInfo = req.body.deviceFingerprint ? JSON.stringify(req.body.deviceFingerprint) : null;
+
+        // Store device token in database
+        try {
+            // Check if device already exists (in case of re-verification)
+            const { data: existingDevice, error: checkError } = await supabase
+                .from('TrustedDevices')
+                .select('DeviceID')
+                .eq('UserID', userProfile.UserID)
+                .eq('DeviceIdentifier', deviceToken)
+                .single();
+
+            if (checkError && checkError.code === 'PGRST116') {
+                // Device doesn't exist, create new trusted device record
+                const { error: insertError } = await supabase
+                    .from('TrustedDevices')
+                    .insert({
+                        UserID: userProfile.UserID,
+                        DeviceIdentifier: deviceToken,
+                        DeviceInfo: deviceInfo,
+                        IsTrusted: true,
+                        TrustedAt: new Date().toISOString(),
+                        LastUsedAt: new Date().toISOString()
+                    });
+
+                if (insertError) {
+                    // Don't fail the OTP verification if device storage fails
+                    // Silently log error for debugging
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error('Error storing trusted device:', insertError);
+                    }
+                }
+            } else if (!checkError && existingDevice) {
+                // Device exists, update it
+                const { error: updateError } = await supabase
+                    .from('TrustedDevices')
+                    .update({
+                        IsTrusted: true,
+                        LastUsedAt: new Date().toISOString()
+                    })
+                    .eq('DeviceID', existingDevice.DeviceID);
+
+                if (updateError && process.env.NODE_ENV === 'development') {
+                    console.error('Error updating trusted device:', updateError);
+                }
+            }
+        } catch (deviceError) {
+            // If TrustedDevices table doesn't exist, silently continue
+            // Table may not be migrated yet
+        }
+
+        // Industry Standard: Set httpOnly cookie with device token
+        // This cookie cannot be accessed by JavaScript and persists across sessions
+        // It will be cleared when user clears browser data, requiring new OTP
+        const cookieName = `device_token_${userProfile.UserID}`;
+        const cookieMaxAge = 365 * 24 * 60 * 60 * 1000; // 1 year
+        
+        res.cookie(cookieName, deviceToken, {
+            httpOnly: true, // Cannot be accessed by JavaScript
+            secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+            sameSite: 'strict', // CSRF protection
+            maxAge: cookieMaxAge,
+            path: '/'
+        });
 
         // Clear OTP from metadata
         await supabase.auth.admin.updateUserById(user.id, {
@@ -944,10 +991,15 @@ export const verifyOTP = async (req: Request, res: Response) => {
         });
 
     } catch (error) {
-        console.error('Verify OTP error:', error);
+        // Industry standard: Log error details for debugging but return user-friendly message
+        console.error('Verify OTP error:', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            userId: req.body?.userId
+        });
+        
         res.status(500).json({
             success: false,
-            message: 'Internal Server Error'
+            message: 'An error occurred during verification. Please try again.'
         });
     }
 };

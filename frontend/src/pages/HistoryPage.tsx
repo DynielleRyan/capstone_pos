@@ -10,7 +10,9 @@ import {
   Calendar,
   Clock,
   Receipt as ReceiptIcon,
-  Printer
+  Printer,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -60,6 +62,9 @@ const HistoryPage = () => {
   
   // Lazy loading state for transaction items
   const [loadedTransactionItems, setLoadedTransactionItems] = useState<Record<string, TransactionItem[]>>({});
+  
+  // Expanded transactions state
+  const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   
   // Reprint receipt states
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -232,6 +237,34 @@ const HistoryPage = () => {
       case 'maya': return 'text-purple-600 bg-purple-100';
       default: return 'text-gray-600 bg-gray-100';
     }
+  };
+
+  const toggleTransactionExpanded = async (transactionId: string) => {
+    const isCurrentlyExpanded = expandedTransactions.has(transactionId);
+    
+    // If expanding, load full items if needed
+    if (!isCurrentlyExpanded) {
+      const transaction = transactions.find(t => t.TransactionID === transactionId);
+      if (transaction && transaction.ItemCount && transaction.ItemCount > 1 && !loadedTransactionItems[transactionId]) {
+        const items = await loadTransactionItems(transactionId);
+        // Update transaction with full items
+        setTransactions(prev => prev.map(t => 
+          t.TransactionID === transactionId 
+            ? { ...t, Items: items }
+            : t
+        ));
+      }
+    }
+    
+    setExpandedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
   };
 
   const openTransactionModal = async (transaction: Transaction) => {
@@ -583,19 +616,39 @@ const HistoryPage = () => {
               <p className="text-gray-500">No transactions found</p>
             </div>
           ) : (
-            filteredTransactions.map((transaction) => (
+            filteredTransactions.map((transaction) => {
+              const isExpanded = expandedTransactions.has(transaction.TransactionID);
+              // Use loaded items if available, otherwise use transaction items
+              const displayItems = loadedTransactionItems[transaction.TransactionID] || transaction.Items;
+              // Show first item when collapsed, all items when expanded
+              const itemsToShow = isExpanded ? displayItems : (displayItems.slice(0, 1));
+              
+              return (
               <div key={transaction.TransactionID} className="bg-white rounded-lg shadow-sm p-6">
                 {/* Order Header */}
                 <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">
-                      ORDER #{transaction.ReferenceNo}
-                    </h3>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(transaction.PaymentMethod)}`}>
-                        {getPaymentMethodIcon(transaction.PaymentMethod)}
-                        <span className="capitalize">{transaction.PaymentMethod}</span>
-                      </span>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
+                      className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                      aria-label={isExpanded ? "Collapse transaction" : "Expand transaction"}
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-gray-600" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-600" />
+                      )}
+                    </button>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800">
+                        ORDER #{transaction.ReferenceNo}
+                      </h3>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(transaction.PaymentMethod)}`}>
+                          {getPaymentMethodIcon(transaction.PaymentMethod)}
+                          <span className="capitalize">{transaction.PaymentMethod}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -610,7 +663,7 @@ const HistoryPage = () => {
 
                 {/* Order Items */}
                 <div className="space-y-4">
-                  {transaction.Items.map((item, index) => (
+                  {itemsToShow.map((item, index) => (
                     <div key={index} className="flex items-center space-x-4">
                       {/* Product Image */}
                       <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
@@ -653,15 +706,16 @@ const HistoryPage = () => {
                     </div>
                   ))}
                   
-                  {/* Show indicator if there are more items */}
-                  {transaction.ItemCount && transaction.ItemCount > transaction.Items.length && (
+                  {/* Show indicator if there are more items (only when collapsed) */}
+                  {!isExpanded && transaction.ItemCount && transaction.ItemCount > 1 && (
                     <div className="text-center py-2 text-sm text-gray-500 italic">
-                      + {transaction.ItemCount - transaction.Items.length} more item{transaction.ItemCount - transaction.Items.length > 1 ? 's' : ''} (view details to see all)
+                      + {transaction.ItemCount - 1} more item{transaction.ItemCount - 1 > 1 ? 's' : ''} (click to expand)
                     </div>
                   )}
                 </div>
 
                 {/* Order Footer */}
+                {isExpanded && (
                 <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-200">
                   <button 
                     onClick={() => handleReprintReceipt(transaction)}
@@ -677,8 +731,10 @@ const HistoryPage = () => {
                     View Details
                   </button>
                 </div>
+                )}
               </div>
-            ))
+            );
+            })
           )}
         </div>
 

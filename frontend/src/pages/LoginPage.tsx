@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Lock, Mail, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { auth } from '../services/supabase';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import { getDeviceIdentifier } from '../utils/deviceFingerprint';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -29,13 +30,6 @@ const LoginPage = () => {
   
   const navigate = useNavigate();
 
-  // Debug: Log when modal state changes
-  useEffect(() => {
-    console.log('OTP Modal state changed:', showOTPModal);
-    if (showOTPModal) {
-      console.log('OTP Modal should be visible now. showOTPModal =', showOTPModal);
-      }
-  }, [showOTPModal]);
 
   // Note: Session check is handled by PublicRoute component in App.tsx
   // No need to check here to avoid redirect loops
@@ -45,85 +39,89 @@ const LoginPage = () => {
     setError('');
     setIsLoading(true);
 
-    console.log('Attempting login with:', { email, password: '***' });
-    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-    console.log('Supabase Anon Key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-
     try {
       const { data, error } = await auth.signIn(email, password, rememberMe);
 
       if (error) {
-        setError(error.message);
+        // Industry standard: User-friendly error messages
+        const errorMessage = error.message.includes('Invalid login credentials') 
+          ? 'Invalid email or password. Please check your credentials and try again.'
+          : error.message.includes('Email not confirmed')
+          ? 'Please verify your email address before logging in.'
+          : error.message.includes('Too many requests')
+          ? 'Too many login attempts. Please wait a few minutes and try again.'
+          : 'Unable to sign in. Please check your credentials and try again.';
+        
+        setError(errorMessage);
         return;
       }
 
       if (data.user && data.session) {
-        // Store session temporarily (don't set in Supabase yet to prevent auto-redirect)
+        // Store session temporarily for API calls
         setTempSession(data.session);
         
-        // Check if this is first-time login by calling backend
-        // Temporarily set session for API calls, but we'll handle redirect manually
+        // Set sessionStorage flag FIRST to prevent redirects
+        sessionStorage.setItem('otpVerification', 'true');
+        
+        // Temporarily set session for API calls
         await auth.setSession({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token
         });
 
+        // Get device identifier for device-based OTP verification
+        const deviceInfo = getDeviceIdentifier();
+
         // Check if this is first-time login by calling backend
         try {
-          console.log('Checking first login status...');
-          const response = await api.post('/auth/check-first-login');
-          console.log('First login check response:', response.data);
+          const response = await api.post('/auth/check-first-login', {
+            deviceFingerprintHash: deviceInfo.fingerprintHash,
+            deviceId: deviceInfo.deviceId,
+            deviceFingerprint: deviceInfo.fingerprint
+          });
           
           if (response.data.success && response.data.data?.requiresOTP) {
-            console.log('First-time login detected - sending OTP...');
             // First-time login - send OTP and show modal
             try {
-              const otpResponse = await api.post('/auth/send-otp', {}, {
+              await api.post('/auth/send-otp', {}, {
                 headers: {
                   Authorization: `Bearer ${data.session.access_token}`
                 }
               });
-              console.log('OTP sent response:', otpResponse.data);
               
-              // Store session and show modal BEFORE signing out
+              // Store session for OTP verification
               setTempSession(data.session);
               setIsLoading(false);
-              
-              // Set flag in sessionStorage to prevent PublicRoute redirect
-              sessionStorage.setItem('otpVerification', 'true');
-              
-              // Set modal to show
-              console.log('Setting OTP modal to show...');
               setShowOTPModal(true);
-              setIsLoading(false);
-              console.log('OTP modal state set. showOTPModal should be true now.');
               
               return;
             } catch (otpError: any) {
-              console.error('Error sending OTP:', otpError);
-              setError('Failed to send verification code. Please try again.');
+              const errorMessage = otpError.response?.data?.message || 
+                'Unable to send verification code. Please try again.';
+              setError(errorMessage);
               setTempSession(null);
+              sessionStorage.removeItem('otpVerification');
               await auth.signOut();
             }
           } else {
-            console.log('Not a first-time login, proceeding normally');
+            // Clear OTP flag since we're proceeding normally
+            sessionStorage.removeItem('otpVerification');
             // Normal login - navigate to dashboard
             navigate('/dashboard');
           }
         } catch (checkError: any) {
-          console.error('Error checking first login:', checkError);
-          console.error('Error details:', {
-            message: checkError.message,
-            response: checkError.response?.data,
-            status: checkError.response?.status
-          });
-          // If check fails, proceed with normal login
-        navigate('/dashboard');
+          // If check fails, proceed with normal login (fail gracefully)
+          sessionStorage.removeItem('otpVerification');
+          navigate('/dashboard');
         }
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
-      console.error('Login error:', err);
+      // Industry standard: User-friendly error messages
+      const errorMessage = err.message?.includes('Network') || err.message?.includes('fetch')
+        ? 'Network error. Please check your internet connection and try again.'
+        : err.message || 'An unexpected error occurred. Please try again.';
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -144,33 +142,31 @@ const LoginPage = () => {
     setOtpError('');
 
     try {
-      // Set session temporarily for API call
-      const { error: sessionError } = await auth.setSession({
-        access_token: tempSession.access_token,
-        refresh_token: tempSession.refresh_token
-      });
+      // Get device identifier for device-based OTP verification
+      const deviceInfo = getDeviceIdentifier();
 
-      if (sessionError) {
-        console.error('Error setting session:', sessionError);
-        setOtpError('Session error. Please log in again.');
-        setTempSession(null);
-        await auth.signOut();
-        return;
-      }
-
-      // Use the token directly from tempSession to avoid timing issues
+      // Use the token directly from tempSession - no need to set session again
       // The backend will validate this token
-      console.log('Calling verify-otp endpoint with OTP...');
-      const response = await api.post('/auth/verify-otp', { otp }, {
+      const response = await api.post('/auth/verify-otp', { 
+        otp,
+        deviceFingerprintHash: deviceInfo.fingerprintHash,
+        deviceId: deviceInfo.deviceId,
+        deviceFingerprint: deviceInfo.fingerprint
+      }, {
         headers: {
           Authorization: `Bearer ${tempSession.access_token}`
         }
       });
 
-      console.log('OTP verification response:', response.data);
-
       if (response.data.success) {
-        // OTP verified - clear OTP flag and navigate
+        // OTP verified - set session and navigate
+        // The session is already set from login, just need to ensure it's active
+        await auth.setSession({
+          access_token: tempSession.access_token,
+          refresh_token: tempSession.refresh_token
+        });
+        
+        // Clear OTP flag and navigate
         sessionStorage.removeItem('otpVerification');
         setShowOTPModal(false);
         setOtp('');
@@ -178,25 +174,38 @@ const LoginPage = () => {
         toast.success('Verification successful!', { position: 'top-center' });
         navigate('/dashboard');
       } else {
-        setOtpError(response.data.message || 'Invalid verification code. Please try again.');
+        // Industry standard: User-friendly error messages
+        const errorMessage = response.data.message?.includes('Invalid') || response.data.message?.includes('invalid')
+          ? 'Invalid verification code. Please check the code and try again.'
+          : response.data.message || 'Verification failed. Please try again.';
+        
+        setOtpError(errorMessage);
       }
     } catch (err: any) {
-      console.error('OTP verification error:', err);
-      console.error('Error details:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status,
-        headers: err.response?.headers
-      });
+      // Industry standard: User-friendly error messages
+      let errorMessage = 'Unable to verify code. Please try again.';
       
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to verify code. Please try again.';
-      setOtpError(errorMessage);
-      
-      // Only sign out if it's a session/token error, not an OTP validation error
-      if (err.response?.status === 401 && err.response?.data?.message?.includes('token')) {
-        setTempSession(null);
-        await auth.signOut();
+      if (err.response?.status === 401) {
+        if (err.response?.data?.message?.includes('token') || err.response?.data?.message?.includes('session')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+          setTempSession(null);
+          await auth.signOut();
+        } else if (err.response?.data?.message?.includes('Invalid') || err.response?.data?.message?.includes('invalid')) {
+          errorMessage = 'Invalid verification code. Please check the code and try again.';
+        } else {
+          errorMessage = err.response?.data?.message || errorMessage;
+        }
+      } else if (err.response?.status === 400) {
+        errorMessage = err.response?.data?.message || 'Invalid request. Please try again.';
+      } else if (err.response?.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (err.message?.includes('Network') || err.message?.includes('fetch')) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
       }
+      
+      setOtpError(errorMessage);
     } finally {
       setIsVerifyingOTP(false);
     }
@@ -211,20 +220,7 @@ const LoginPage = () => {
     setOtpError('');
     setIsVerifyingOTP(true);
     try {
-      // Set session temporarily for API call
-      const { error: sessionError } = await auth.setSession({
-        access_token: tempSession.access_token,
-        refresh_token: tempSession.refresh_token
-      });
-
-      if (sessionError) {
-        console.error('Error setting session for resend:', sessionError);
-        setOtpError('Session error. Please log in again.');
-        setIsVerifyingOTP(false);
-        return;
-      }
-
-      // Use token directly from tempSession
+      // Use token directly from tempSession - no need to set session again
       const response = await api.post('/auth/send-otp', {}, {
         headers: {
           Authorization: `Bearer ${tempSession.access_token}`
@@ -235,11 +231,29 @@ const LoginPage = () => {
         toast.success('Verification code has been resent to your email.', { position: 'top-center' });
         setOtp(''); // Clear current OTP input
       } else {
-        setOtpError(response.data.message || 'Failed to resend code. Please try again.');
+        const errorMessage = response.data.message?.includes('rate limit') || response.data.message?.includes('too many')
+          ? 'Please wait a few minutes before requesting another code.'
+          : response.data.message || 'Unable to resend code. Please try again.';
+        
+        setOtpError(errorMessage);
       }
     } catch (err: any) {
-      setOtpError(err.response?.data?.message || 'Failed to resend code. Please try again.');
-      console.error('Resend OTP error:', err);
+      // Industry standard: User-friendly error messages
+      let errorMessage = 'Unable to resend verification code. Please try again.';
+      
+      if (err.response?.status === 429) {
+        errorMessage = 'Too many requests. Please wait a few minutes before requesting another code.';
+      } else if (err.response?.status === 401) {
+        errorMessage = 'Your session has expired. Please log in again.';
+        setTempSession(null);
+        await auth.signOut();
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message?.includes('Network') || err.message?.includes('fetch')) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      }
+      
+      setOtpError(errorMessage);
     } finally {
       setIsVerifyingOTP(false);
     }
@@ -254,14 +268,25 @@ const LoginPage = () => {
       const { error } = await auth.resetPassword(email);
 
       if (error) {
-        setError(error.message);
+        // Industry standard: User-friendly error messages
+        const errorMessage = error.message?.includes('email')
+          ? 'Please enter a valid email address.'
+          : error.message?.includes('not found')
+          ? 'No account found with this email address.'
+          : error.message || 'Unable to send password reset email. Please try again.';
+        
+        setError(errorMessage);
         return;
       }
 
       setResetEmailSent(true);
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
-      console.error('Password reset error:', err);
+      // Industry standard: User-friendly error messages
+      const errorMessage = err.message?.includes('Network') || err.message?.includes('fetch')
+        ? 'Network error. Please check your internet connection and try again.'
+        : err.message || 'An unexpected error occurred. Please try again.';
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

@@ -39,6 +39,7 @@ interface Product {
   SellingPrice: number;       // Price per unit
   IsVATExemptYN: boolean;     // VAT exemption status
   PrescriptionYN: boolean;    // Prescription requirement
+  SeniorPWDYN?: boolean;      // Senior/PWD VAT exemption
   Image?: string;             // Product image URL
   stock?: number;             // Available stock (optional)
 }
@@ -51,6 +52,8 @@ interface CartItem {
   price: number;              // Unit price
   quantity: number;           // Quantity in cart
   stock?: number;             // Available stock
+  seniorPWDYN?: boolean;      // Senior/PWD VAT exemption
+  isVATExemptYN?: boolean;    // VAT exemption status
   discounts?: string[];       // Applied discounts
 }
 
@@ -103,6 +106,7 @@ const DashboardPage = () => {
     subtotal: number;
     discount: number;
     vat: number;
+    vatExempt?: number;
     total: number;
     cashReceived?: number;
     change?: number;
@@ -292,7 +296,9 @@ const DashboardPage = () => {
         description: product.GenericName || product.Name,
         price: product.SellingPrice,
         quantity: 1,
-        stock: availableStock
+        stock: availableStock,
+        seniorPWDYN: product.SeniorPWDYN,
+        isVATExemptYN: product.IsVATExemptYN
       };
       setCartItems(prev => [...prev, newItem]);
     }
@@ -415,11 +421,58 @@ const DashboardPage = () => {
     return subtotal * 0.2;
   };
 
-  const calculateTotal = () => {
-    // Total = Subtotal - Discount + VAT (12% on discounted amount)
+  const calculateVAT = () => {
     const subtotal = calculateSubtotal();
     const discount = calculateDiscount();
-    const vat = (subtotal - discount) * 0.12;
+    
+    // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
+    return cartItems.reduce((totalVAT, item) => {
+      const itemSubtotal = item.price * item.quantity;
+      const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
+      
+      // Calculate VAT:
+      // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
+      // 2. If product has IsVATExemptYN = true, VAT = 0
+      // 3. Otherwise, VAT = 12% of (itemSubtotal - itemDiscount)
+      // Handle boolean, string, or null values
+      const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
+      const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+      
+      let itemVAT = 0;
+      if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+        itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+      }
+      
+      return totalVAT + itemVAT;
+    }, 0);
+  };
+
+  const calculateVATExempt = () => {
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    
+    // Calculate VAT exempt amount (items with 0 VAT)
+    return cartItems.reduce((totalExempt, item) => {
+      const itemSubtotal = item.price * item.quantity;
+      const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
+      
+      // If item has no VAT (either IsVATExemptYN or SeniorPWDYN when active)
+      // Handle boolean, string, or null values
+      const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
+      const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+      const hasNoVAT = isVATExemptYN || (isSeniorPWDActive && seniorPWDYN);
+      if (hasNoVAT) {
+        return totalExempt + (itemSubtotal - itemDiscount);
+      }
+      return totalExempt;
+    }, 0);
+  };
+
+  const calculateTotal = () => {
+    // Total = Subtotal - Discount + VAT
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    const vat = calculateVAT();
     return subtotal - discount + vat;
   };
 
@@ -527,10 +580,22 @@ const DashboardPage = () => {
         });
         
         // Prepare receipt data
+        const subtotal = calculateSubtotal();
+        const discount = calculateDiscount();
         const receiptItems = cartItems.map(item => {
           const itemSubtotal = item.price * item.quantity;
-          const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
-          const itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+          const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
+          
+          // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
+          // Handle boolean, string, or null values
+          const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
+          const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+          
+          let itemVAT = 0;
+          if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+            itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+          }
+          
           const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
           
           return {
@@ -549,9 +614,10 @@ const DashboardPage = () => {
           orderDateTime: new Date().toISOString(),
           paymentMethod: selectedPaymentMethod,
           items: receiptItems,
-          subtotal: calculateSubtotal(),
-          discount: calculateDiscount(),
-          vat: (calculateSubtotal() - calculateDiscount()) * 0.12,
+          subtotal: subtotal,
+          discount: discount,
+          vat: calculateVAT(),
+          vatExempt: calculateVATExempt(),
           total: calculateTotal(),
           cashReceived: selectedPaymentMethod === 'cash' ? parseFloat(cashReceived) || undefined : undefined,
           change: selectedPaymentMethod === 'cash' ? calculateChange() : undefined
@@ -879,20 +945,55 @@ const DashboardPage = () => {
                 <p className="text-sm">Add products to get started</p>
               </div>
             ) : (
-              cartItems.map((item) => (
-                <OrderItem
-                  key={item.id}
-                  product={{
-                    id: item.id,
-                    name: item.name
-                  }}
-                  quantity={item.quantity}
-                  price={`₱${item.price.toFixed(2)}`}
-                  stock={item.stock}
-                  onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
-                  onRemove={() => removeItem(item.id)}
-                />
-              ))
+              cartItems.map((item) => {
+                // Calculate item-level VAT info
+                const subtotal = calculateSubtotal();
+                const discount = calculateDiscount();
+                const itemSubtotal = item.price * item.quantity;
+                const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discount / subtotal) : 0;
+                
+                // Check if item has VAT
+                const seniorPWDYN = item.seniorPWDYN === true || item.seniorPWDYN === 'true';
+                const isVATExemptYN = item.isVATExemptYN === true || item.isVATExemptYN === 'true';
+                const hasVAT = !isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN);
+                const itemVAT = hasVAT ? (itemSubtotal - itemDiscount) * 0.12 : 0;
+                const itemTotal = itemSubtotal - itemDiscount + itemVAT;
+                
+                return (
+                  <div key={item.id} className="space-y-1">
+                    <OrderItem
+                      product={{
+                        id: item.id,
+                        name: item.name
+                      }}
+                      quantity={item.quantity}
+                      price={`₱${itemTotal.toFixed(2)}`}
+                      stock={item.stock}
+                      onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
+                      onRemove={() => removeItem(item.id)}
+                    />
+                    {/* VAT Status Indicator */}
+                    <div className="px-3 pb-2 text-xs">
+                      <div className="flex justify-between items-center text-gray-600">
+                        <span>Subtotal: ₱{itemSubtotal.toFixed(2)}</span>
+                        {itemDiscount > 0 && (
+                          <span className="text-red-500">Disc: -₱{itemDiscount.toFixed(2)}</span>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center mt-1">
+                        {hasVAT ? (
+                          <span className="text-blue-600 font-medium">VAT (12%): ₱{itemVAT.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-green-600 font-medium">
+                            {isSeniorPWDActive && seniorPWDYN ? 'VAT Exempt (Senior/PWD)' : 'VAT Exempt'}
+                          </span>
+                        )}
+                        <span className="font-medium">Total: ₱{itemTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -912,9 +1013,31 @@ const DashboardPage = () => {
                 <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">VAT</span>
-              <span className="font-medium">₱{((calculateSubtotal() - calculateDiscount()) * 0.12).toFixed(2)}</span>
+            
+            {/* VAT Breakdown Section */}
+            <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">VAT Breakdown</div>
+              
+              {/* VAT Exempt Amount */}
+              {calculateVATExempt() > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">VAT Exempt Amount</span>
+                  <span className="font-medium text-green-600">₱{calculateVATExempt().toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* VAT Amount */}
+              {calculateVAT() > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">VAT (12%)</span>
+                  <span className="font-medium text-blue-600">₱{calculateVAT().toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* Show message if no VAT */}
+              {calculateVAT() === 0 && calculateVATExempt() === 0 && (
+                <div className="text-xs text-gray-500 italic">No VAT applicable</div>
+              )}
             </div>
             {selectedPaymentMethod === 'cash' && (
               <div className="flex justify-between text-sm">
@@ -1279,6 +1402,7 @@ const DashboardPage = () => {
           subtotal={receiptData.subtotal}
           discount={receiptData.discount}
           vat={receiptData.vat}
+          vatExempt={receiptData.vatExempt}
           total={receiptData.total}
           cashReceived={receiptData.cashReceived}
           change={receiptData.change}
