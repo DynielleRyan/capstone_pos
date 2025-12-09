@@ -15,7 +15,6 @@ interface ProductCardProps {
 // Product card component - displays product info with add to cart functionality
 const ProductCard: React.FC<ProductCardProps> = ({ 
   name, 
-  description, 
   image, 
   stock, 
   sellingPrice,
