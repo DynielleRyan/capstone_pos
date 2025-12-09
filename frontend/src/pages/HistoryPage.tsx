@@ -144,7 +144,7 @@ const HistoryPage = () => {
             Subtotal: item.Subtotal,
             VATAmount: item.VATAmount || 0,
             DiscountAmount: item.DiscountAmount || 0,
-          Image: undefined // No images in list view for performance
+          Image: item.Product?.Image || undefined
         })) || [],
         ItemCount: transaction.ItemCount || transaction.Transaction_Item?.length || 0
         }));
@@ -306,19 +306,8 @@ const HistoryPage = () => {
 
   // Handle reprint receipt
   const handleReprintReceipt = (transaction: Transaction) => {
-    // Debug: log role information
-    console.log('Reprint attempt - Role check:', {
-      role: profile?.role,
-      roleLower: userRole,
-      isClerk,
-      isPharmacistOrAdmin,
-      isRoleUnknown,
-      profile: profile
-    });
-
     // Safety check: if role is unknown, deny access
     if (isRoleUnknown) {
-      console.warn('Profile not loaded or role unknown - denying access');
       toast.error('Unable to verify your permissions. Please refresh the page and try again.', {
         position: 'top-center',
         duration: 4000,
@@ -330,15 +319,12 @@ const HistoryPage = () => {
     
     if (isClerk) {
       // Clerk needs verification
-      console.log('Clerk detected - showing verification modal');
       setShowVerificationModal(true);
     } else if (isPharmacistOrAdmin) {
       // Pharmacist/Admin can reprint directly
-      console.log('Pharmacist/Admin detected - reprinting directly');
       fetchTransactionDetailsAndShowReceipt(transaction.TransactionID);
     } else {
       // Unknown role - deny access
-      console.warn('Unknown role detected:', userRole, '- denying reprint access');
       alert('You do not have permission to reprint receipts. Only pharmacist and admin accounts can reprint receipts.');
     }
   };

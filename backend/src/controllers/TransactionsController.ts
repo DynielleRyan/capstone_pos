@@ -68,7 +68,8 @@ export const createTransaction = async (req: Request, res: Response) => {
                                paymentMethod === 'maya' ? 'Maya' : 'Cash';
 
         // Backend discount calculation - only apply if Senior/PWD is active
-        let discountAmount = 0;
+        // Philippine law: Senior/PWD discount is applied to selling price only, not to (selling price + VAT)
+        let discountPercent = 0.2; // Default 20% (Philippine law)
         let discountId = null;
 
         if (isSeniorPWDActive) {
@@ -80,14 +81,12 @@ export const createTransaction = async (req: Request, res: Response) => {
                 .single();
 
             if (discountError) {
-                console.error('Discount lookup error:', discountError);
-                // If discount not found, use default 20% discount
-                console.log('Using default 20% discount');
-                discountAmount = subtotal * 0.2;
-                discountId = null; // No discount ID since it's not in database
+                // If discount not found, use default 20% discount (Philippine law)
+                discountPercent = 0.2;
+                discountId = null;
             } else {
-                // Apply discount using the percentage from database
-                discountAmount = subtotal * (seniorDiscount.DiscountPercent / 100);
+                // Use percentage from database (convert to decimal)
+                discountPercent = seniorDiscount.DiscountPercent / 100;
                 discountId = seniorDiscount.DiscountID;
             }
         }
@@ -119,7 +118,9 @@ export const createTransaction = async (req: Request, res: Response) => {
         let totalVATExemptAmount = 0;
         const transactionItems = items.map((item: any) => {
             const itemSubtotal = item.quantity * item.unitPrice;
-            const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discountAmount / subtotal) : 0;
+            // Senior/PWD discount: Applied to selling price only (Philippine law)
+            // Discount is applied to base selling price, not to (selling price + VAT)
+            const itemDiscount = isSeniorPWDActive ? itemSubtotal * discountPercent : 0;
             
             // Get product details
             const productDetails = productMap.get(item.productId);
@@ -134,12 +135,14 @@ export const createTransaction = async (req: Request, res: Response) => {
             // Calculate VAT:
             // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
             // 2. If product has IsVATExemptYN = true, VAT = 0
-            // 3. Otherwise, VAT = 12% of (itemSubtotal - itemDiscount)
+            // 3. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+            // VAT is added ON TOP of the selling price, not calculated on discounted amount
             let itemVAT = 0;
             if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
-                itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+                itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
             }
             
+            // Final amount = base price - discount + VAT
             const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
             
             totalDiscountAmount += itemDiscount;
