@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        .info {
+            background: #dbeafe;
+            border: 1px solid #3b82f6;
+            color: #1e40af;
+        }
+        .loading {
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Supabase Connection Test</h1>
+        <p>Test your Supabase connection from the frontend</p>
+        
+        <button onclick="testFrontendSupabase()">Test Frontend Supabase</button>
+        <button onclick="testBackendAPI()">Test Backend API</button>
+        <button onclick="testBackendDB()">Test Backend Database</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        // Import Supabase (you'll need to adjust the path)
+        // For this to work, you need to serve this file from your Vite dev server
+        // Or include the Supabase script tag
+        
+        window.testFrontendSupabase = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Testing frontend Supabase connection...';
+            
+            try {
+                // This assumes Supabase is available globally or imported
+                // You may need to adjust based on your setup
+                const response = await fetch('/api/test-db');
+                const data = await response.json();
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}\n\nMake sure:\n1. Backend server is running\n2. Frontend can reach the backend API`;
+            }
+        };
+        
+        window.testBackendAPI = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Testing backend API health...';
+            
+            try {
+                const apiUrl = import.meta.env?.VITE_API_URL || 'http://localhost:3000/api';
+                const response = await fetch(`${apiUrl}/health`);
+                const data = await response.json();
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}\n\nBackend might not be running or API URL is incorrect.`;
+            }
+        };
+        
+        window.testBackendDB = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result loading';
+            resultDiv.textContent = 'Testing backend database connection...';
+            
+            try {
+                const apiUrl = import.meta.env?.VITE_API_URL || 'http://localhost:3000/api';
+                const response = await fetch(`${apiUrl}/test-db`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                } else {
+                    resultDiv.className = 'result error';
+                }
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}\n\nMake sure:\n1. Backend server is running\n2. Supabase credentials are correct in backend/.env`;
+            }
+        };
+    </script>
+</body>
+</html>
