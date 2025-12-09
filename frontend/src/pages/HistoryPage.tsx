@@ -627,28 +627,15 @@ const HistoryPage = () => {
               <div key={transaction.TransactionID} className="bg-white rounded-lg shadow-sm p-6">
                 {/* Order Header */}
                 <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
-                      className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-                      aria-label={isExpanded ? "Collapse transaction" : "Expand transaction"}
-                    >
-                      {isExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-gray-600" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-600" />
-                      )}
-                    </button>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        ORDER #{transaction.ReferenceNo}
-                      </h3>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(transaction.PaymentMethod)}`}>
-                          {getPaymentMethodIcon(transaction.PaymentMethod)}
-                          <span className="capitalize">{transaction.PaymentMethod}</span>
-                        </span>
-                      </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      ORDER #{transaction.ReferenceNo}
+                    </h3>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(transaction.PaymentMethod)}`}>
+                        {getPaymentMethodIcon(transaction.PaymentMethod)}
+                        <span className="capitalize">{transaction.PaymentMethod}</span>
+                      </span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -708,14 +695,35 @@ const HistoryPage = () => {
                   
                   {/* Show indicator if there are more items (only when collapsed) */}
                   {!isExpanded && transaction.ItemCount && transaction.ItemCount > 1 && (
-                    <div className="text-center py-2 text-sm text-gray-500 italic">
-                      + {transaction.ItemCount - 1} more item{transaction.ItemCount - 1 > 1 ? 's' : ''} (click to expand)
+                    <div className="text-center py-2">
+                      <div className="text-sm text-gray-500 italic mb-2">
+                        + {transaction.ItemCount - 1} more item{transaction.ItemCount - 1 > 1 ? 's' : ''} (click to expand)
+                      </div>
+                      <button
+                        onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
+                        className="p-1 hover:bg-gray-100 rounded-lg transition-colors mx-auto"
+                        aria-label="Expand transaction"
+                      >
+                        <ChevronDown className="w-5 h-5 text-gray-600" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Show collapse button when expanded */}
+                  {isExpanded && (
+                    <div className="text-center py-2">
+                      <button
+                        onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
+                        className="p-1 hover:bg-gray-100 rounded-lg transition-colors mx-auto"
+                        aria-label="Collapse transaction"
+                      >
+                        <ChevronUp className="w-5 h-5 text-gray-600" />
+                      </button>
                     </div>
                   )}
                 </div>
 
-                {/* Order Footer */}
-                {isExpanded && (
+                {/* Order Footer - Always visible */}
                 <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-200">
                   <button 
                     onClick={() => handleReprintReceipt(transaction)}
@@ -731,7 +739,6 @@ const HistoryPage = () => {
                     View Details
                   </button>
                 </div>
-                )}
               </div>
             );
             })
