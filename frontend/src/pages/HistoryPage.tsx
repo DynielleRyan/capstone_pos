@@ -638,29 +638,51 @@ const HistoryPage = () => {
                 <div className="space-y-4">
                   {itemsToShow.map((item, index) => (
                     <div key={index} className="flex items-center space-x-4">
-                      {/* Product Image */}
-                      <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
-                        {item.Image && !item.Image.includes('via.placeholder.com') ? (
-                          <img 
-                            src={item.Image} 
-                            alt={item.ProductName}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              // Hide image on error, show placeholder div
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
-                            <span className="text-xs text-gray-400">No Image</span>
+                      {/* Product Image - Only show when expanded */}
+                      {isExpanded ? (
+                        <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                          {item.Image && !item.Image.includes('via.placeholder.com') ? (
+                            <img 
+                              src={item.Image} 
+                              alt={item.ProductName}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                // Hide image on error, show placeholder div
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
+                              <span className="text-xs text-gray-400">No Image</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Payment Method Badge - Show when retracted */
+                        <div className="flex-shrink-0">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getPaymentMethodColor(transaction.PaymentMethod)}`}>
+                            {getPaymentMethodIcon(transaction.PaymentMethod)}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
                       {/* Product Details */}
                       <div className="flex-1">
                         <h4 className="font-medium text-gray-800">{item.ProductName}</h4>
-                        <p className="text-sm text-gray-500">Antihistamine</p>
+                        {isExpanded ? (
+                          <p className="text-sm text-gray-500">Antihistamine</p>
+                        ) : (
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-xs text-gray-500">
+                              {formatDate(transaction.OrderDateTime)} • {formatTime(transaction.OrderDateTime)}
+                            </span>
+                            {transaction.ItemCount && transaction.ItemCount > 1 && (
+                              <span className="text-xs text-blue-600 font-medium">
+                                +{transaction.ItemCount - 1} more
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Quantity */}
