@@ -14,7 +14,8 @@ export const getAllProducts = async (req: Request, res: Response) => {
                 .from('Product')
                 .select('*')
                 .eq('IsActive', true)
-                .order('Name', { ascending: true }),
+                .order('Name', { ascending: true })
+                .limit(70),
             supabase
                 .from('Product_Item')
                 .select('ProductID, Stock')
