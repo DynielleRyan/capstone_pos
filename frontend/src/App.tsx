@@ -37,7 +37,13 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   // Don't redirect if user is in OTP verification mode
   const isOTPVerification = sessionStorage.getItem('otpVerification') === 'true';
   
-  return user && !isOTPVerification ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+  // If user exists but we're in OTP verification, don't redirect
+  if (user && isOTPVerification) {
+    return <>{children}</>;
+  }
+  
+  // Otherwise, redirect if user is logged in
+  return user ? <Navigate to="/dashboard" replace /> : <>{children}</>;
 };
 
 function AppRoutes() {

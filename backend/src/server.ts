@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import 'dotenv/config'; //global import for all files 
 import  { supabase } from './utils/database';
 import productRoutes from './routes/products';
@@ -36,10 +37,11 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true
+    credentials: true // Required for httpOnly cookies
 }));
 
 app.use(express.json());
+app.use(cookieParser()); // Parse cookies from requests
 
 //Routes
 app.use('/api/products', productRoutes);
