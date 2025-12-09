@@ -385,8 +385,6 @@ const Receipt: React.FC<ReceiptProps> = ({
               </thead>
               <tbody>
                 ${items.map(item => {
-                  // Calculate item subtotal before discount
-                  const itemSubtotalBeforeDiscount = item.unitPrice * item.quantity;
                   const itemDiscount = item.discountAmount || 0;
                   const itemVAT = item.vatAmount || 0;
                   const hasVAT = itemVAT > 0;
