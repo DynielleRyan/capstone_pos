@@ -128,7 +128,6 @@ const ResetPasswordPage = () => {
         const errorMessage = err.message || err.response?.data?.message || 'An unexpected error occurred';
         if (errorMessage.includes('expired') || errorMessage.includes('session')) {
           // If we get here but password was updated, ignore the error
-          console.log('Session expired after password update (this is normal)');
           setError('');
           setSuccess(true);
           setTimeout(() => {

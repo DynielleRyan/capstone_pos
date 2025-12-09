@@ -112,7 +112,7 @@ const LoginPage = () => {
         } catch (checkError: any) {
           // If check fails, proceed with normal login (fail gracefully)
           sessionStorage.removeItem('otpVerification');
-          navigate('/dashboard');
+        navigate('/dashboard');
         }
       }
     } catch (err: any) {
@@ -188,8 +188,8 @@ const LoginPage = () => {
       if (err.response?.status === 401) {
         if (err.response?.data?.message?.includes('token') || err.response?.data?.message?.includes('session')) {
           errorMessage = 'Your session has expired. Please log in again.';
-          setTempSession(null);
-          await auth.signOut();
+        setTempSession(null);
+        await auth.signOut();
         } else if (err.response?.data?.message?.includes('Invalid') || err.response?.data?.message?.includes('invalid')) {
           errorMessage = 'Invalid verification code. Please check the code and try again.';
         } else {
