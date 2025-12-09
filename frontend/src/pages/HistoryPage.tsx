@@ -10,7 +10,9 @@ import {
   Calendar,
   Clock,
   Receipt as ReceiptIcon,
-  Printer
+  Printer,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -60,6 +62,9 @@ const HistoryPage = () => {
   
   // Lazy loading state for transaction items
   const [loadedTransactionItems, setLoadedTransactionItems] = useState<Record<string, TransactionItem[]>>({});
+  
+  // Expanded transactions state
+  const [expandedTransactions, setExpandedTransactions] = useState<Set<string>>(new Set());
   
   // Reprint receipt states
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -139,7 +144,7 @@ const HistoryPage = () => {
             Subtotal: item.Subtotal,
             VATAmount: item.VATAmount || 0,
             DiscountAmount: item.DiscountAmount || 0,
-          Image: undefined // No images in list view for performance
+          Image: item.Product?.Image || undefined
         })) || [],
         ItemCount: transaction.ItemCount || transaction.Transaction_Item?.length || 0
         }));
@@ -234,6 +239,34 @@ const HistoryPage = () => {
     }
   };
 
+  const toggleTransactionExpanded = async (transactionId: string) => {
+    const isCurrentlyExpanded = expandedTransactions.has(transactionId);
+    
+    // If expanding, load full items if needed
+    if (!isCurrentlyExpanded) {
+      const transaction = transactions.find(t => t.TransactionID === transactionId);
+      if (transaction && transaction.ItemCount && transaction.ItemCount > 1 && !loadedTransactionItems[transactionId]) {
+        const items = await loadTransactionItems(transactionId);
+        // Update transaction with full items
+        setTransactions(prev => prev.map(t => 
+          t.TransactionID === transactionId 
+            ? { ...t, Items: items }
+            : t
+        ));
+      }
+    }
+    
+    setExpandedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
+
   const openTransactionModal = async (transaction: Transaction) => {
     // Load full transaction items if not already loaded
     let fullItems = transaction.Items;
@@ -273,19 +306,8 @@ const HistoryPage = () => {
 
   // Handle reprint receipt
   const handleReprintReceipt = (transaction: Transaction) => {
-    // Debug: log role information
-    console.log('Reprint attempt - Role check:', {
-      role: profile?.role,
-      roleLower: userRole,
-      isClerk,
-      isPharmacistOrAdmin,
-      isRoleUnknown,
-      profile: profile
-    });
-
     // Safety check: if role is unknown, deny access
     if (isRoleUnknown) {
-      console.warn('Profile not loaded or role unknown - denying access');
       toast.error('Unable to verify your permissions. Please refresh the page and try again.', {
         position: 'top-center',
         duration: 4000,
@@ -297,15 +319,12 @@ const HistoryPage = () => {
     
     if (isClerk) {
       // Clerk needs verification
-      console.log('Clerk detected - showing verification modal');
       setShowVerificationModal(true);
     } else if (isPharmacistOrAdmin) {
       // Pharmacist/Admin can reprint directly
-      console.log('Pharmacist/Admin detected - reprinting directly');
       fetchTransactionDetailsAndShowReceipt(transaction.TransactionID);
     } else {
       // Unknown role - deny access
-      console.warn('Unknown role detected:', userRole, '- denying reprint access');
       alert('You do not have permission to reprint receipts. Only pharmacist and admin accounts can reprint receipts.');
     }
   };
@@ -583,7 +602,14 @@ const HistoryPage = () => {
               <p className="text-gray-500">No transactions found</p>
             </div>
           ) : (
-            filteredTransactions.map((transaction) => (
+            filteredTransactions.map((transaction) => {
+              const isExpanded = expandedTransactions.has(transaction.TransactionID);
+              // Use loaded items if available, otherwise use transaction items
+              const displayItems = loadedTransactionItems[transaction.TransactionID] || transaction.Items;
+              // Show first item when collapsed, all items when expanded
+              const itemsToShow = isExpanded ? displayItems : (displayItems.slice(0, 1));
+              
+              return (
               <div key={transaction.TransactionID} className="bg-white rounded-lg shadow-sm p-6">
                 {/* Order Header */}
                 <div className="flex justify-between items-center mb-4">
@@ -610,7 +636,7 @@ const HistoryPage = () => {
 
                 {/* Order Items */}
                 <div className="space-y-4">
-                  {transaction.Items.map((item, index) => (
+                  {itemsToShow.map((item, index) => (
                     <div key={index} className="flex items-center space-x-4">
                       {/* Product Image */}
                       <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
@@ -653,15 +679,37 @@ const HistoryPage = () => {
                     </div>
                   ))}
                   
-                  {/* Show indicator if there are more items */}
-                  {transaction.ItemCount && transaction.ItemCount > transaction.Items.length && (
-                    <div className="text-center py-2 text-sm text-gray-500 italic">
-                      + {transaction.ItemCount - transaction.Items.length} more item{transaction.ItemCount - transaction.Items.length > 1 ? 's' : ''} (view details to see all)
+                  {/* Show indicator if there are more items (only when collapsed) */}
+                  {!isExpanded && transaction.ItemCount && transaction.ItemCount > 1 && (
+                    <div className="text-center py-2">
+                      <div className="text-sm text-gray-500 italic mb-2">
+                        + {transaction.ItemCount - 1} more item{transaction.ItemCount - 1 > 1 ? 's' : ''} (click to expand)
+                      </div>
+                      <button
+                        onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
+                        className="p-1 hover:bg-gray-100 rounded-lg transition-colors mx-auto"
+                        aria-label="Expand transaction"
+                      >
+                        <ChevronDown className="w-5 h-5 text-gray-600" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Show collapse button when expanded */}
+                  {isExpanded && (
+                    <div className="text-center py-2">
+                      <button
+                        onClick={() => toggleTransactionExpanded(transaction.TransactionID)}
+                        className="p-1 hover:bg-gray-100 rounded-lg transition-colors mx-auto"
+                        aria-label="Collapse transaction"
+                      >
+                        <ChevronUp className="w-5 h-5 text-gray-600" />
+                      </button>
                     </div>
                   )}
                 </div>
 
-                {/* Order Footer */}
+                {/* Order Footer - Always visible */}
                 <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-200">
                   <button 
                     onClick={() => handleReprintReceipt(transaction)}
@@ -678,7 +726,8 @@ const HistoryPage = () => {
                   </button>
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
 

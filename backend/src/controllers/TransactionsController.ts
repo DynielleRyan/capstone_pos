@@ -68,7 +68,8 @@ export const createTransaction = async (req: Request, res: Response) => {
                                paymentMethod === 'maya' ? 'Maya' : 'Cash';
 
         // Backend discount calculation - only apply if Senior/PWD is active
-        let discountAmount = 0;
+        // Philippine law: Senior/PWD discount is applied to selling price only, not to (selling price + VAT)
+        let discountPercent = 0.2; // Default 20% (Philippine law)
         let discountId = null;
 
         if (isSeniorPWDActive) {
@@ -80,23 +81,90 @@ export const createTransaction = async (req: Request, res: Response) => {
                 .single();
 
             if (discountError) {
-                console.error('Discount lookup error:', discountError);
-                // If discount not found, use default 20% discount
-                console.log('Using default 20% discount');
-                discountAmount = subtotal * 0.2;
-                discountId = null; // No discount ID since it's not in database
+                // If discount not found, use default 20% discount (Philippine law)
+                discountPercent = 0.2;
+                discountId = null;
             } else {
-                // Apply discount using the percentage from database
-                discountAmount = subtotal * (seniorDiscount.DiscountPercent / 100);
+                // Use percentage from database (convert to decimal)
+                discountPercent = seniorDiscount.DiscountPercent / 100;
                 discountId = seniorDiscount.DiscountID;
             }
         }
 
-        // Backend VAT calculation (on discounted amount)
-        const vatAmount = (subtotal - discountAmount) * 0.12;
-        
-        // Backend total calculation
-        const totalAmount = subtotal - discountAmount + vatAmount;
+        // Fetch product details including SeniorPWDYN and IsVATExemptYN for all items
+        const productIds = items.map((item: any) => item.productId);
+        const { data: products, error: productsError } = await supabase
+            .from('Product')
+            .select('ProductID, SeniorPWDYN, IsVATExemptYN')
+            .in('ProductID', productIds);
+
+        if (productsError) {
+            console.error('Error fetching products:', productsError);
+            throw new Error('Failed to fetch product details');
+        }
+
+        // Create a map of productId to product details for quick lookup
+        const productMap = new Map();
+        products?.forEach((product: any) => {
+            productMap.set(product.ProductID, {
+                SeniorPWDYN: product.SeniorPWDYN,
+                IsVATExemptYN: product.IsVATExemptYN
+            });
+        });
+
+        // Calculate per-item amounts with VAT based on SeniorPWDYN and IsVATExemptYN
+        let totalDiscountAmount = 0;
+        let totalVATAmount = 0;
+        let totalVATExemptAmount = 0;
+        const transactionItems = items.map((item: any) => {
+            const itemSubtotal = item.quantity * item.unitPrice;
+            // Senior/PWD discount: Applied to selling price only (Philippine law)
+            // Discount is applied to base selling price, not to (selling price + VAT)
+            const itemDiscount = isSeniorPWDActive ? itemSubtotal * discountPercent : 0;
+            
+            // Get product details
+            const productDetails = productMap.get(item.productId);
+            // Handle boolean, string, or null values for SeniorPWDYN
+            const seniorPWDYN = productDetails?.SeniorPWDYN === true || productDetails?.SeniorPWDYN === 'true';
+            // Handle boolean, string, or null values for IsVATExemptYN
+            const isVATExemptYN = productDetails?.IsVATExemptYN === true || productDetails?.IsVATExemptYN === 'true';
+            
+            // Debug logging
+            console.log(`Product ${item.productId}: SeniorPWDYN=${productDetails?.SeniorPWDYN}, isSeniorPWDActive=${isSeniorPWDActive}, isVATExemptYN=${isVATExemptYN}`);
+            
+            // Calculate VAT:
+            // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
+            // 2. If product has IsVATExemptYN = true, VAT = 0
+            // 3. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+            // VAT is added ON TOP of the selling price, not calculated on discounted amount
+            let itemVAT = 0;
+            if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+                itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+            }
+            
+            // Final amount = base price - discount + VAT
+            const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
+            
+            totalDiscountAmount += itemDiscount;
+            totalVATAmount += itemVAT;
+            if (itemVAT === 0 && (isVATExemptYN || (isSeniorPWDActive && seniorPWDYN))) {
+                totalVATExemptAmount += (itemSubtotal - itemDiscount);
+            }
+
+            return {
+                TransactionID: null, // Will be set after transaction is created
+                ProductID: item.productId,
+                Quantity: item.quantity,
+                UnitPrice: item.unitPrice,
+                Subtotal: finalSubtotal,  // Final amount including VAT
+                DiscountID: discountId,   // Reference to the discount if applied
+                DiscountAmount: itemDiscount,  // Discount amount for this item
+                VATAmount: itemVAT       // VAT amount for this item
+            };
+        });
+
+        // Backend total calculation based on item-level calculations
+        const totalAmount = subtotal - totalDiscountAmount + totalVATAmount;
 
         // Prepare transaction data for database insertion
         const transactionData = {
@@ -105,7 +173,7 @@ export const createTransaction = async (req: Request, res: Response) => {
             Total: totalAmount,        // Backend calculated
             CashReceived: cashReceived,
             PaymentChange: change,
-            VATAmount: vatAmount,      // Backend calculated
+            VATAmount: totalVATAmount,      // Backend calculated from items
             UserID: finalUserId,
             SeniorPWDID: isSeniorPWDActive && seniorPWDID ? seniorPWDID : null, // Store PWD/Senior ID if provided
             OrderDateTime: new Date().toLocaleString('sv-SE', { 
@@ -129,24 +197,9 @@ export const createTransaction = async (req: Request, res: Response) => {
         
         console.log('Transaction created successfully:', transaction);
 
-        // Create transaction items array for database insertion
-        const transactionItems = items.map((item: any) => {
-            // Calculate per-item amounts
-            const itemSubtotal = item.quantity * item.unitPrice;
-            const itemDiscount = isSeniorPWDActive ? itemSubtotal * (discountAmount / subtotal) : 0;
-            const itemVAT = (itemSubtotal - itemDiscount) * 0.12;
-            const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
-
-            return {
-                TransactionID: transaction.TransactionID,
-                ProductID: item.productId,
-                Quantity: item.quantity,
-                UnitPrice: item.unitPrice,
-                Subtotal: finalSubtotal,  // Final amount including VAT
-                DiscountID: discountId,   // Reference to the discount if applied
-                DiscountAmount: itemDiscount,  // Discount amount for this item
-                VATAmount: itemVAT       // VAT amount for this item
-            };
+        // Update transaction items with TransactionID
+        transactionItems.forEach((item: any) => {
+            item.TransactionID = transaction.TransactionID;
         });
 
         // Insert all transaction items into database
@@ -217,8 +270,9 @@ for (const item of items) {
             referenceNo: transaction.ReferenceNo,
             calculatedAmounts: {
                 subtotal: subtotal,
-                discount: discountAmount,
-                vat: vatAmount,
+                discount: totalDiscountAmount,
+                vat: totalVATAmount,
+                vatExempt: totalVATExemptAmount,
                 total: totalAmount,
                 isSeniorPWDActive: isSeniorPWDActive
             }
@@ -242,20 +296,14 @@ export const getAllTransactions = async (req: Request, res: Response) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = (page - 1) * limit;
 
-        // Get accurate count: count distinct transactions that have items
-        // This matches the filter used in the data query (Transaction_Item!inner)
-        // We query Transaction_Item to get all TransactionIDs, then count distinct ones
-        const { data: transactionItems, error: countError } = await supabase
-            .from('Transaction_Item')
-            .select('TransactionID');
+        // Use Supabase's built-in count for better performance
+        // This uses PostgreSQL's COUNT which is much faster than fetching all rows
+        const { count: totalCount, error: countError } = await supabase
+            .from('Transaction')
+            .select('TransactionID', { count: 'exact', head: true });
 
-        let totalCount = 0;
         if (countError) {
-            console.error('Error counting transactions with items:', countError);
-        } else if (transactionItems) {
-            // Count distinct TransactionIDs
-            const distinctTransactionIds = new Set(transactionItems.map(item => item.TransactionID));
-            totalCount = distinctTransactionIds.size;
+            console.error('Error counting transactions:', countError);
         }
 
         // Fetch transactions with minimal item data (only first item for preview, no images)
@@ -314,9 +362,9 @@ export const getAllTransactions = async (req: Request, res: Response) => {
             pagination: {
                 page,
                 limit,
-                total: totalCount || 0,
-                totalPages: Math.ceil((totalCount || 0) / limit),
-                hasMore: offset + limit < (totalCount || 0)
+                total: totalCount ?? 0,
+                totalPages: Math.ceil((totalCount ?? 0) / limit),
+                hasMore: offset + limit < (totalCount ?? 0)
             }
         });
     } catch (error) {

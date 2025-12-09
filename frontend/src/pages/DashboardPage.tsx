@@ -13,9 +13,12 @@ import {
   Shield,
   ShoppingBag,
   Heart,
-  Baby,
   User,
-  X
+  X,
+  Sparkles,
+  Bandage,
+  UtensilsCrossed,
+  Circle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
@@ -39,6 +42,7 @@ interface Product {
   SellingPrice: number;       // Price per unit
   IsVATExemptYN: boolean;     // VAT exemption status
   PrescriptionYN: boolean;    // Prescription requirement
+  SeniorPWDYN?: boolean;      // Senior/PWD VAT exemption
   Image?: string;             // Product image URL
   stock?: number;             // Available stock (optional)
 }
@@ -51,6 +55,9 @@ interface CartItem {
   price: number;              // Unit price
   quantity: number;           // Quantity in cart
   stock?: number;             // Available stock
+  image?: string;             // Product image URL
+  seniorPWDYN?: boolean;      // Senior/PWD VAT exemption
+  isVATExemptYN?: boolean;    // VAT exemption status
   discounts?: string[];       // Applied discounts
 }
 
@@ -70,7 +77,8 @@ const DashboardPage = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>(''); // Selected category
   const [selectedFilter, setSelectedFilter] = useState<string>('all'); // Filter type
   const [currentPage, setCurrentPage] = useState<number>(1);        // Current page for pagination
-  const [itemsPerPage] = useState<number>(10);                     // Items per page
+  const [itemsPerPage] = useState<number>(14);                     // Items per page
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]); // Available categories from products
   
   // Payment processing state
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(''); // Payment method
@@ -103,6 +111,7 @@ const DashboardPage = () => {
     subtotal: number;
     discount: number;
     vat: number;
+    vatExempt?: number;
     total: number;
     cashReceived?: number;
     change?: number;
@@ -134,46 +143,52 @@ const DashboardPage = () => {
   }, []);
 
   // Fetch products from backend API - can be called on mount or after transactions
+  const [isFetching, setIsFetching] = useState(false); // Prevent duplicate calls
+  
   const fetchProducts = useCallback(async (showLoading = true) => {
+      // Prevent duplicate simultaneous calls
+      if (isFetching) {
+        console.log('⚠️ Fetch already in progress, skipping duplicate call');
+        return;
+      }
+      
       try {
+      setIsFetching(true);
       if (showLoading) {
         setLoading(true);
       }
+        // Products endpoint now includes stock in a single call
         const response = await api.get('/products');
-        console.log('Products fetched:', response.data); // Debug log
         
-        // Fetch stock for each product
-        const productsWithStock = await Promise.all(
-          response.data.map(async (product: Product) => {
-            try {
-              const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
-              return {
-                ...product,
-                stock: stockResponse.data.totalStock || 0
-              };
-            } catch (err) {
-              console.error(`Error fetching stock for product ${product.ProductID}:`, err);
-              return {
-                ...product,
-                stock: 0
-              };
-            }
-          })
-        );
+        setProducts(response.data);
         
-        setProducts(productsWithStock);
+        // Extract unique categories from products
+        const uniqueCategories = Array.from(
+          new Set(response.data.map((p: Product) => p.Category).filter(Boolean))
+        ).sort() as string[];
+        setAvailableCategories(uniqueCategories);
+        
         setError('');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching products:', err);
-        setError('Failed to load products');
+        // Provide more helpful error message for timeout/connection errors
+        if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+          setError('Connection timeout. Please ensure the backend server is running.');
+        } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
+          setError('Network error. Please check your connection and ensure the backend server is running.');
+        } else {
+          setError('Failed to load products');
+        }
         // Keep products array empty if API fails
         setProducts([]);
+        setAvailableCategories([]);
       } finally {
       if (showLoading) {
         setLoading(false);
       }
+      setIsFetching(false);
     }
-  }, []);
+  }, [isFetching]);
 
   // Fetch products on component mount
   useEffect(() => {
@@ -194,11 +209,16 @@ const DashboardPage = () => {
       );
     }
 
-    // Category filter - exact match with selected category
+    // Category filter - case-insensitive match with selected category
     if (selectedCategory) {
-      filtered = filtered.filter(product =>
-        product.Category.toLowerCase() === selectedCategory.toLowerCase()
-      );
+      filtered = filtered.filter(product => {
+        const productCategory = (product.Category || '').toLowerCase().trim();
+        const selected = selectedCategory.toLowerCase().trim();
+        // Match exact or if category contains the selected value (for flexibility)
+        return productCategory === selected || 
+               productCategory.includes(selected) || 
+               selected.includes(productCategory);
+      });
     }
 
     // Additional filters and sorting options
@@ -258,6 +278,21 @@ const DashboardPage = () => {
     }
   };
 
+  // Get category icon based on category name
+  const getCategoryIcon = (categoryName: string) => {
+    const category = categoryName.toLowerCase();
+    if (category.includes('prescription')) return <Pill className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />;
+    if (category.includes('over-the-counter') || category.includes('otc')) return <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" />;
+    if (category.includes('vitamin')) return <Circle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600" />;
+    if (category.includes('supplement')) return <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />;
+    if (category.includes('first aid')) return <Bandage className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />;
+    if (category.includes('personal care')) return <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-pink-600" />;
+    if (category.includes('medical device')) return <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />;
+    if (category.includes('food')) return <UtensilsCrossed className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />;
+    // Default icon
+    return <Grid3X3 className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />;
+  };
+
   // Add product to shopping cart - increments quantity if already exists
   const addToCart = (product: Product) => {
     const availableStock = product.stock || 0;
@@ -292,7 +327,10 @@ const DashboardPage = () => {
         description: product.GenericName || product.Name,
         price: product.SellingPrice,
         quantity: 1,
-        stock: availableStock
+        stock: availableStock,
+        image: product.Image,
+        seniorPWDYN: product.SeniorPWDYN,
+        isVATExemptYN: product.IsVATExemptYN
       };
       setCartItems(prev => [...prev, newItem]);
     }
@@ -415,11 +453,55 @@ const DashboardPage = () => {
     return subtotal * 0.2;
   };
 
+  const calculateVAT = () => {
+    // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
+    // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+    return cartItems.reduce((totalVAT, item) => {
+      const itemSubtotal = item.price * item.quantity;
+      
+      // Calculate VAT:
+      // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
+      // 2. If product has IsVATExemptYN = true, VAT = 0
+      // 3. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+      // VAT is added ON TOP of the selling price, not calculated on discounted amount
+      // Handle boolean or undefined values
+      const seniorPWDYN = item.seniorPWDYN === true;
+      const isVATExemptYN = item.isVATExemptYN === true;
+      
+      let itemVAT = 0;
+      if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+        itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+      }
+      
+      return totalVAT + itemVAT;
+    }, 0);
+  };
+
+  const calculateVATExempt = () => {
+    // Calculate VAT exempt amount (items with 0 VAT)
+    return cartItems.reduce((totalExempt, item) => {
+      const itemSubtotal = item.price * item.quantity;
+      // Senior/PWD discount: 20% of selling price only (Philippine law)
+      // Discount is applied to base selling price, not to (selling price + VAT)
+      const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
+      
+      // If item has no VAT (either IsVATExemptYN or SeniorPWDYN when active)
+      // Handle boolean or undefined values
+      const seniorPWDYN = item.seniorPWDYN === true;
+      const isVATExemptYN = item.isVATExemptYN === true;
+      const hasNoVAT = isVATExemptYN || (isSeniorPWDActive && seniorPWDYN);
+      if (hasNoVAT) {
+        return totalExempt + (itemSubtotal - itemDiscount);
+      }
+      return totalExempt;
+    }, 0);
+  };
+
   const calculateTotal = () => {
-    // Total = Subtotal - Discount + VAT (12% on discounted amount)
+    // Total = Subtotal - Discount + VAT
     const subtotal = calculateSubtotal();
     const discount = calculateDiscount();
-    const vat = (subtotal - discount) * 0.12;
+    const vat = calculateVAT();
     return subtotal - discount + vat;
   };
 
@@ -512,13 +594,8 @@ const DashboardPage = () => {
         }))
       };
 
-      console.log('User object:', user); // Debug log
-      console.log('Sending transaction data:', transactionData); // Debug log
-
       // Send transaction to backend
       const response = await api.post('/transactions', transactionData);
-      
-      console.log('Transaction response:', response.data); // Debug log
       
       if (response.data.success) {
         toast.dismiss(loadingToast);
@@ -527,10 +604,26 @@ const DashboardPage = () => {
         });
         
         // Prepare receipt data
+        const subtotal = calculateSubtotal();
+        const discount = calculateDiscount();
         const receiptItems = cartItems.map(item => {
           const itemSubtotal = item.price * item.quantity;
+          // Senior/PWD discount: 20% of selling price only (Philippine law)
+          // Discount is applied to base selling price, not to (selling price + VAT)
           const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
-          const itemVAT = (itemSubtotal - itemDiscount) * 0.12;
+          
+          // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
+          // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+          // Handle boolean or undefined values
+          const seniorPWDYN = item.seniorPWDYN === true;
+          const isVATExemptYN = item.isVATExemptYN === true;
+          
+          let itemVAT = 0;
+          if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+            itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+          }
+          
+          // Final amount = base price - discount + VAT
           const finalSubtotal = itemSubtotal - itemDiscount + itemVAT;
           
           return {
@@ -549,9 +642,10 @@ const DashboardPage = () => {
           orderDateTime: new Date().toISOString(),
           paymentMethod: selectedPaymentMethod,
           items: receiptItems,
-          subtotal: calculateSubtotal(),
-          discount: calculateDiscount(),
-          vat: (calculateSubtotal() - calculateDiscount()) * 0.12,
+          subtotal: subtotal,
+          discount: discount,
+          vat: calculateVAT(),
+          vatExempt: calculateVATExempt(),
           total: calculateTotal(),
           cashReceived: selectedPaymentMethod === 'cash' ? parseFloat(cashReceived) || undefined : undefined,
           change: selectedPaymentMethod === 'cash' ? calculateChange() : undefined
@@ -589,7 +683,7 @@ const DashboardPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
       {/* Left Sidebar - same as before */}
-      <div className="w-full lg:w-80 bg-white shadow-lg flex flex-col lg:flex-col">
+      <div className="w-full lg:w-56 bg-white shadow-lg flex flex-col lg:flex-col">
         {/* Logo */}
         <div className="p-6 border-b text-center">
           <h1 
@@ -679,28 +773,68 @@ const DashboardPage = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-3 sm:p-6">
-          {/* Categories Section - Functional */}
-          <div className="mb-6 sm:mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">Category</h2>
+        <div className="flex-1 p-3 sm:p-4">
+          {/* Categories Section - Based on Product Category Column */}
+          <div className="mb-4 sm:mb-5">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-3">Category</h2>
             <div className="flex space-x-3 sm:space-x-4 overflow-x-auto pb-2">
-              {/* Predefined categories */}
+              {/* All Categories */}
+              <CategoryCard
+                name="All"
+                icon={<Grid3X3 className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />}
+                onClick={() => setSelectedCategory('')}
+                isSelected={selectedCategory === ''}
+              />
+              
+              {/* Dynamic categories from products - Known categories */}
               {[
-                { name: "All", icon: <Grid3X3 className="w-6 h-6 text-gray-600" />, value: "" },
-                { name: "Pain Relief", icon: <Pill className="w-6 h-6 text-blue-600" />, value: "Pain Relief" },
-                { name: "Antibiotic", icon: <Shield className="w-6 h-6 text-green-600" />, value: "Antibiotic" },
-                { name: "OTC", icon: <ShoppingBag className="w-6 h-6 text-purple-600" />, value: "OTC" },
-                { name: "Essentials", icon: <Heart className="w-6 h-6 text-orange-600" />, value: "Essentials" },
-                { name: "Baby Needs", icon: <Baby className="w-6 h-6 text-pink-600" />, value: "Baby Needs" }
-              ].map((category, index) => (
-                <CategoryCard
-                  key={index}
-                  name={category.name}
-                  icon={category.icon}
-                  onClick={() => setSelectedCategory(category.value)}
-                  isSelected={selectedCategory === category.value}
-                />
-              ))}
+                'Prescription',
+                'Over-the-Counter',
+                'Vitamins',
+                'Supplements',
+                'First Aid',
+                'Personal Care',
+                'Medical Devices',
+                'Foods'
+              ]
+                .filter(cat => availableCategories.some(ac => 
+                  ac.toLowerCase().includes(cat.toLowerCase()) || 
+                  cat.toLowerCase().includes(ac.toLowerCase())
+                ))
+                .map((category) => (
+                  <CategoryCard
+                    key={category}
+                    name={category}
+                    icon={getCategoryIcon(category)}
+                    onClick={() => setSelectedCategory(category)}
+                    isSelected={selectedCategory.toLowerCase() === category.toLowerCase()}
+                  />
+                ))}
+              
+              {/* Additional categories from database that don't match known list */}
+              {availableCategories
+                .filter(cat => ![
+                  'Prescription',
+                  'Over-the-Counter',
+                  'Vitamins',
+                  'Supplements',
+                  'First Aid',
+                  'Personal Care',
+                  'Medical Devices',
+                  'Foods'
+                ].some(known => 
+                  cat.toLowerCase().includes(known.toLowerCase()) || 
+                  known.toLowerCase().includes(cat.toLowerCase())
+                ))
+                .map((category) => (
+                  <CategoryCard
+                    key={category}
+                    name={category}
+                    icon={getCategoryIcon(category)}
+                    onClick={() => setSelectedCategory(category)}
+                    isSelected={selectedCategory.toLowerCase() === category.toLowerCase()}
+                  />
+                ))}
             </div>
           </div>
 
@@ -763,7 +897,7 @@ const DashboardPage = () => {
 
             {/* Product Grid - DYNAMIC DATA */}
             {!loading && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3 mb-16 items-start">
                 {currentProducts.length === 0 ? (
                   <div className="col-span-full text-center py-8 text-gray-500">
                     <p>No products found</p>
@@ -781,6 +915,8 @@ const DashboardPage = () => {
                       description={product.GenericName || product.Name}
                       image={product.Image}
                       stock={product.stock}
+                      sellingPrice={product.SellingPrice}
+                      isVATExempt={product.IsVATExemptYN || false}
                       onAdd={() => addToCart(product)}
                     />
                   ))
@@ -790,7 +926,7 @@ const DashboardPage = () => {
 
             {/* Pagination - Functional */}
             {totalPages > 1 && (
-              <div className="flex justify-center space-x-2">
+              <div className="flex justify-center space-x-2 mt-12">
                 <button 
                   onClick={goToPreviousPage}
                   disabled={currentPage === 1}
@@ -828,7 +964,7 @@ const DashboardPage = () => {
       </div>
 
       {/* Right Sidebar - Order Summary */}
-      <div className="w-full lg:w-[28rem] bg-white shadow-lg flex flex-col order-first lg:order-last">
+      <div className="w-full lg:w-96 xl:w-[28rem] bg-white shadow-lg flex flex-col order-first lg:order-last">
         {/* Order Header */}
         <div className="p-4 border-b">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 space-y-3 sm:space-y-0">
@@ -879,20 +1015,58 @@ const DashboardPage = () => {
                 <p className="text-sm">Add products to get started</p>
               </div>
             ) : (
-              cartItems.map((item) => (
-                <OrderItem
-                  key={item.id}
-                  product={{
-                    id: item.id,
-                    name: item.name
-                  }}
-                  quantity={item.quantity}
-                  price={`₱${item.price.toFixed(2)}`}
-                  stock={item.stock}
-                  onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
-                  onRemove={() => removeItem(item.id)}
-                />
-              ))
+              cartItems.map((item) => {
+                // Calculate item-level VAT info
+                const itemSubtotal = item.price * item.quantity;
+                // Senior/PWD discount: 20% of selling price only (Philippine law)
+                // Discount is applied to base selling price, not to (selling price + VAT)
+                const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
+                
+                // Check if item has VAT
+                // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+                const seniorPWDYN = item.seniorPWDYN === true;
+                const isVATExemptYN = item.isVATExemptYN === true;
+                const hasVAT = !isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN);
+                const itemVAT = hasVAT ? itemSubtotal * 0.12 : 0; // VAT is 12% of base selling price
+                // Final amount = base price - discount + VAT
+                const itemTotal = itemSubtotal - itemDiscount + itemVAT;
+                
+                return (
+                  <div key={item.id} className="space-y-1">
+                    <OrderItem
+                      product={{
+                        id: item.id,
+                        name: item.name,
+                        image: item.image
+                      }}
+                      quantity={item.quantity}
+                      price={`₱${itemTotal.toFixed(2)}`}
+                      stock={item.stock}
+                      onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
+                      onRemove={() => removeItem(item.id)}
+                    />
+                    {/* VAT Status Indicator */}
+                    <div className="px-3 pb-2 text-xs">
+                      <div className="flex justify-between items-center text-gray-600">
+                        <span>Subtotal: ₱{itemSubtotal.toFixed(2)}</span>
+                        {itemDiscount > 0 && (
+                          <span className="text-red-500">Disc: -₱{itemDiscount.toFixed(2)}</span>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center mt-1">
+                        {hasVAT ? (
+                          <span className="text-blue-600 font-medium">VAT (12%): ₱{itemVAT.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-green-600 font-medium">
+                            {isSeniorPWDActive && seniorPWDYN ? 'VAT Exempt (Senior/PWD)' : 'VAT Exempt'}
+                          </span>
+                        )}
+                        <span className="font-medium">Total: ₱{itemTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -912,9 +1086,31 @@ const DashboardPage = () => {
                 <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">VAT</span>
-              <span className="font-medium">₱{((calculateSubtotal() - calculateDiscount()) * 0.12).toFixed(2)}</span>
+            
+            {/* VAT Breakdown Section */}
+            <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">VAT Breakdown</div>
+              
+              {/* VAT Exempt Amount */}
+              {calculateVATExempt() > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">VAT Exempt Amount</span>
+                  <span className="font-medium text-green-600">₱{calculateVATExempt().toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* VAT Amount */}
+              {calculateVAT() > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">VAT (12%)</span>
+                  <span className="font-medium text-blue-600">₱{calculateVAT().toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* Show message if no VAT */}
+              {calculateVAT() === 0 && calculateVATExempt() === 0 && (
+                <div className="text-xs text-gray-500 italic">No VAT applicable</div>
+              )}
             </div>
             {selectedPaymentMethod === 'cash' && (
               <div className="flex justify-between text-sm">
@@ -1279,6 +1475,7 @@ const DashboardPage = () => {
           subtotal={receiptData.subtotal}
           discount={receiptData.discount}
           vat={receiptData.vat}
+          vatExempt={receiptData.vatExempt}
           total={receiptData.total}
           cashReceived={receiptData.cashReceived}
           change={receiptData.change}

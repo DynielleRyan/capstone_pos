@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import 'dotenv/config'; //global import for all files 
 import  { supabase } from './utils/database';
 import productRoutes from './routes/products';
@@ -36,10 +37,11 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true
+    credentials: true // Required for httpOnly cookies
 }));
 
 app.use(express.json());
+app.use(cookieParser()); // Parse cookies from requests
 
 //Routes
 app.use('/api/products', productRoutes);
@@ -56,13 +58,56 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/test-db', async (req, res) => {
     try {
+        console.log('Testing Supabase connection...');
+        
+        // Test 1: Basic connection test
         const {data, error} = await supabase.from('Product').select('*').limit(1);
         if (error) {
-            throw error
+            throw error;
+        }
+        
+        // Test 2: Check if we can query auth users (tests service role key)
+        const {data: authTest, error: authError} = await supabase.auth.admin.listUsers();
+        
+        const response: any = {
+            success: true,
+            message: 'Supabase connection successful!',
+            timestamp: new Date().toISOString(),
+            tests: {
+                database: {
+                    status: 'connected',
+                    message: 'Successfully queried Product table',
+                    sampleData: data?.length || 0
+                }
+            }
         };
-        res.json({message: 'Database Connected',data});
-    } catch (error) {
-        res.status(500).json({error: error instanceof Error ? error.message : 'Unknown error'});
+        
+        if (!authError) {
+            response.tests.auth = {
+                status: 'connected',
+                message: 'Service role key is valid',
+                userCount: authTest?.users?.length || 0
+            };
+        } else {
+            response.tests.auth = {
+                status: 'warning',
+                message: 'Could not test auth (this is normal if using anon key)',
+                error: authError.message
+            };
+        }
+        
+        res.json(response);
+    } catch (error: any) {
+        console.error('Supabase connection test failed:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Supabase connection failed',
+            error: error.message || 'Unknown error',
+            details: error.details || null,
+            hint: error.message?.includes('Invalid API key') 
+                ? 'Check your SUPABASE_SERVICE_ROLE_KEY in .env file'
+                : 'Verify your Supabase credentials and network connection'
+        });
     }
 })
 

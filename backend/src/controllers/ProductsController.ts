@@ -3,15 +3,53 @@ import { Request, Response } from 'express';
 
 export const getAllProducts = async (req: Request, res: Response) => {
     try {
-        const { data, error } = await supabase.from('Product').select('*');
-        if (error) {
-            console.error('Supabase error fetching products:', error);
-            throw error;
+        console.log('🚀 Fetching products - simple approach');
+        const startTime = Date.now();
+        
+        // Simple two-query approach - no database functions needed
+        // This is slower but SAFE for production
+        
+        const [productsResult, itemsResult] = await Promise.all([
+            supabase
+                .from('Product')
+                .select('*')
+                .eq('IsActive', true)
+                .order('Name', { ascending: true }),
+            supabase
+                .from('Product_Item')
+                .select('ProductID, Stock')
+                .eq('IsActive', true)
+        ]);
+        
+        if (productsResult.error) {
+            console.error('❌ Error fetching products:', productsResult.error);
+            throw productsResult.error;
         }
-        console.log('Product GET - Success:', data?.length || 0, 'products');
-        res.json(data || []);
+
+        const products = productsResult.data || [];
+        const productItems = itemsResult.data || [];
+        
+        console.log(`✅ Got ${products.length} products and ${productItems.length} items`);
+
+        // Calculate stock
+        const stockMap = new Map<string, number>();
+        productItems.forEach(item => {
+            const current = stockMap.get(item.ProductID) || 0;
+            stockMap.set(item.ProductID, current + (item.Stock || 0));
+        });
+
+        // Combine
+        const result = products.map(p => ({
+            ...p,
+            stock: stockMap.get(p.ProductID) || 0
+        }));
+
+        const totalTime = Date.now() - startTime;
+        console.log(`✅ Total time: ${totalTime}ms, returning ${result.length} products`);
+        res.json(result);
+        
     } catch (error: any) {
-        console.error('Error in getAllProducts:', error);
+        console.error('❌ Error in getAllProducts:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch products',

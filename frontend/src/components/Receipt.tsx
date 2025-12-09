@@ -19,6 +19,7 @@ interface ReceiptProps {
   subtotal: number;
   discount: number;
   vat: number;
+  vatExempt?: number;
   total: number;
   cashReceived?: number;
   change?: number;
@@ -38,14 +39,15 @@ const Receipt: React.FC<ReceiptProps> = ({
   subtotal,
   discount,
   vat,
+  vatExempt,
   total,
   cashReceived,
   change,
   isSeniorPWDActive,
   onClose,
   pharmacyName = "Jambo's Pharmacy",
-  pharmacyAddress = "123 Main Street, City, Philippines",
-  pharmacyContact = "Tel: (02) 1234-5678"
+  pharmacyAddress = "Babag, Lapu-Lapu City",
+  pharmacyContact = "0991 648 2809"
 }) => {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -383,13 +385,18 @@ const Receipt: React.FC<ReceiptProps> = ({
               </thead>
               <tbody>
                 ${items.map(item => {
+                  const itemDiscount = item.discountAmount || 0;
+                  const itemVAT = item.vatAmount || 0;
+                  const hasVAT = itemVAT > 0;
+                  
                   // Don't truncate - let CSS handle wrapping
                   // For 57mm width, we can fit more characters with proper wrapping
                   return `
                   <tr>
                     <td style="word-break: break-word; overflow-wrap: break-word; hyphens: auto;">
                       ${item.productName}
-                      ${item.discountAmount && item.discountAmount > 0 ? `<br><small style="color: red;">Disc: -₱${item.discountAmount.toFixed(2)}</small>` : ''}
+                      ${itemDiscount > 0 ? `<br><small style="color: red;">Disc: -₱${itemDiscount.toFixed(2)}</small>` : ''}
+                      ${hasVAT ? `<br><small style="color: #2563eb;">VAT (12%): ₱${itemVAT.toFixed(2)}</small>` : `<br><small style="color: #16a34a;">VAT Exempt</small>`}
                     </td>
                     <td class="text-center">${item.quantity}</td>
                     <td class="text-right" style="white-space: nowrap;"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
@@ -410,9 +417,29 @@ const Receipt: React.FC<ReceiptProps> = ({
                 <span>-₱${discount.toFixed(2)}</span>
               </div>
               ` : ''}
-              <div class="total-row">
-                <span>VAT (12%):</span>
-                <span>₱${vat.toFixed(2)}</span>
+              
+              <div style="border-top: 1px dashed #999; margin: 8px 0; padding-top: 8px;">
+                <div style="font-size: 9pt; font-weight: bold; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">VAT Breakdown</div>
+                
+                ${vatExempt && vatExempt > 0 ? `
+                <div class="total-row">
+                  <span style="color: #16a34a;">VAT Exempt Amount:</span>
+                  <span style="color: #16a34a; font-weight: bold;">₱${vatExempt.toFixed(2)}</span>
+                </div>
+                ` : ''}
+                
+                ${vat > 0 ? `
+                <div class="total-row">
+                  <span style="color: #2563eb;">VAT (12%):</span>
+                  <span style="color: #2563eb; font-weight: bold;">₱${vat.toFixed(2)}</span>
+                </div>
+                ` : ''}
+                
+                ${vat === 0 && (!vatExempt || vatExempt === 0) ? `
+                <div class="total-row" style="font-size: 9pt; color: #666; font-style: italic;">
+                  <span>No VAT applicable</span>
+                </div>
+                ` : ''}
               </div>
               ${paymentMethod === 'cash' && cashReceived ? `
               <div class="total-row">
@@ -511,23 +538,38 @@ const Receipt: React.FC<ReceiptProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, index) => (
-                    <tr key={index} className="border-b border-gray-200">
-                      <td className="py-2 text-gray-800">
-                        <div className="font-medium">{item.productName}</div>
-                        {item.discountAmount && item.discountAmount > 0 && (
-                          <div className="text-xs text-red-600">
-                            Discount: ₱{item.discountAmount.toFixed(2)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="text-center py-2 text-gray-700">{item.quantity}</td>
-                      <td className="text-right py-2 text-gray-700">₱{item.unitPrice.toFixed(2)}</td>
-                      <td className="text-right py-2 font-medium text-gray-800">
-                        ₱{item.subtotal.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((item, index) => {
+                    const itemDiscount = item.discountAmount || 0;
+                    const itemVAT = item.vatAmount || 0;
+                    const hasVAT = itemVAT > 0;
+                    
+                    return (
+                      <tr key={index} className="border-b border-gray-200">
+                        <td className="py-2 text-gray-800">
+                          <div className="font-medium">{item.productName}</div>
+                          {itemDiscount > 0 && (
+                            <div className="text-xs text-red-600">
+                              Discount: ₱{itemDiscount.toFixed(2)}
+                            </div>
+                          )}
+                          {hasVAT ? (
+                            <div className="text-xs text-blue-600 font-medium">
+                              VAT (12%): ₱{itemVAT.toFixed(2)}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-green-600 font-medium">
+                              VAT Exempt
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-center py-2 text-gray-700">{item.quantity}</td>
+                        <td className="text-right py-2 text-gray-700">₱{item.unitPrice.toFixed(2)}</td>
+                        <td className="text-right py-2 font-medium text-gray-800">
+                          ₱{item.subtotal.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -547,9 +589,27 @@ const Receipt: React.FC<ReceiptProps> = ({
                 </div>
               )}
               
-              <div className="flex justify-between">
-                <span className="text-gray-600">VAT (12%):</span>
-                <span className="font-medium">₱{vat.toFixed(2)}</span>
+              {/* VAT Breakdown Section */}
+              <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">VAT Breakdown</div>
+                
+                {vatExempt && vatExempt > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 text-green-600">VAT Exempt Amount:</span>
+                    <span className="font-medium text-green-600">₱{vatExempt.toFixed(2)}</span>
+                  </div>
+                )}
+                
+                {vat > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 text-blue-600">VAT (12%):</span>
+                    <span className="font-medium text-blue-600">₱{vat.toFixed(2)}</span>
+                  </div>
+                )}
+                
+                {vat === 0 && (!vatExempt || vatExempt === 0) && (
+                  <div className="text-xs text-gray-500 italic">No VAT applicable</div>
+                )}
               </div>
               
               {paymentMethod === 'cash' && cashReceived && (
