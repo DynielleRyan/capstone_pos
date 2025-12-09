@@ -77,7 +77,7 @@ const DashboardPage = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>(''); // Selected category
   const [selectedFilter, setSelectedFilter] = useState<string>('all'); // Filter type
   const [currentPage, setCurrentPage] = useState<number>(1);        // Current page for pagination
-  const [itemsPerPage] = useState<number>(10);                     // Items per page
+  const [itemsPerPage] = useState<number>(14);                     // Items per page
   const [availableCategories, setAvailableCategories] = useState<string[]>([]); // Available categories from products
   
   // Payment processing state
@@ -143,44 +143,42 @@ const DashboardPage = () => {
   }, []);
 
   // Fetch products from backend API - can be called on mount or after transactions
+  const [isFetching, setIsFetching] = useState(false); // Prevent duplicate calls
+  
   const fetchProducts = useCallback(async (showLoading = true) => {
+      // Prevent duplicate simultaneous calls
+      if (isFetching) {
+        console.log('⚠️ Fetch already in progress, skipping duplicate call');
+        return;
+      }
+      
       try {
+      setIsFetching(true);
       if (showLoading) {
         setLoading(true);
       }
+        // Products endpoint now includes stock in a single call
         const response = await api.get('/products');
         
-        // Fetch stock for each product
-        const productsWithStock = await Promise.all(
-          response.data.map(async (product: Product) => {
-            try {
-              const stockResponse = await api.get(`/inventory/stock/${product.ProductID}`);
-              return {
-                ...product,
-                stock: stockResponse.data.totalStock || 0
-              };
-            } catch (err) {
-              console.error(`Error fetching stock for product ${product.ProductID}:`, err);
-              return {
-                ...product,
-                stock: 0
-              };
-            }
-          })
-        );
-        
-        setProducts(productsWithStock);
+        setProducts(response.data);
         
         // Extract unique categories from products
         const uniqueCategories = Array.from(
-          new Set(productsWithStock.map((p: Product) => p.Category).filter(Boolean))
+          new Set(response.data.map((p: Product) => p.Category).filter(Boolean))
         ).sort() as string[];
         setAvailableCategories(uniqueCategories);
         
         setError('');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching products:', err);
-        setError('Failed to load products');
+        // Provide more helpful error message for timeout/connection errors
+        if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+          setError('Connection timeout. Please ensure the backend server is running.');
+        } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
+          setError('Network error. Please check your connection and ensure the backend server is running.');
+        } else {
+          setError('Failed to load products');
+        }
         // Keep products array empty if API fails
         setProducts([]);
         setAvailableCategories([]);
@@ -188,8 +186,9 @@ const DashboardPage = () => {
       if (showLoading) {
         setLoading(false);
       }
+      setIsFetching(false);
     }
-  }, []);
+  }, [isFetching]);
 
   // Fetch products on component mount
   useEffect(() => {
@@ -898,7 +897,7 @@ const DashboardPage = () => {
 
             {/* Product Grid - DYNAMIC DATA */}
             {!loading && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3 mb-6 items-start">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3 mb-16 items-start">
                 {currentProducts.length === 0 ? (
                   <div className="col-span-full text-center py-8 text-gray-500">
                     <p>No products found</p>
@@ -927,7 +926,7 @@ const DashboardPage = () => {
 
             {/* Pagination - Functional */}
             {totalPages > 1 && (
-              <div className="flex justify-center space-x-2">
+              <div className="flex justify-center space-x-2 mt-12">
                 <button 
                   onClick={goToPreviousPage}
                   disabled={currentPage === 1}

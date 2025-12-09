@@ -30,9 +30,9 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const customerPrice = sellingPrice + vatAmount;
   
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 hover:shadow-md transition-all flex flex-col h-full min-h-0">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all flex flex-col h-full min-h-0" style={{ padding: 'calc(0.625rem * 1.12)' }}>
       {/* Product image container - shorter */}
-      <div className="w-full aspect-[4/3] bg-gray-100 rounded-lg mb-1.5 overflow-hidden flex-shrink-0">
+      <div className="w-full bg-gray-100 rounded-lg mb-1.5 overflow-hidden flex-shrink-0" style={{ aspectRatio: '4 / 3.36' }}>
         {image && !image.includes('via.placeholder.com') ? (
           <img 
             src={image} 
@@ -53,12 +53,12 @@ const ProductCard: React.FC<ProductCardProps> = ({
       <div className="flex-1 flex flex-col min-h-0 justify-between">
         <div className="flex-shrink-0">
           {/* Product name */}
-          <h3 className="font-semibold text-gray-900 mb-0.5 line-clamp-2 text-xs leading-tight h-[2rem] flex-shrink-0">
+          <h3 className="font-semibold text-gray-900 line-clamp-2 text-xs leading-tight flex-shrink-0" style={{ height: 'calc(2rem * 1.12)', marginBottom: 'calc(0.125rem * 1.12)' }}>
             {name}
           </h3>
           
           {/* Price and VAT Exempt Badge - combined with stock */}
-          <div className="mb-1 flex-shrink-0">
+          <div className="flex-shrink-0" style={{ marginBottom: 'calc(0.25rem * 1.12)' }}>
             <div className="flex items-start justify-between gap-1 mb-0.5">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold text-blue-600">
@@ -89,11 +89,12 @@ const ProductCard: React.FC<ProductCardProps> = ({
         <button 
           onClick={onAdd}
           disabled={isOutOfStock}
-          className={`w-full py-1 rounded-lg flex items-center justify-center space-x-1 transition-colors flex-shrink-0 font-medium text-xs ${
+          className={`w-full rounded-lg flex items-center justify-center space-x-1 transition-colors flex-shrink-0 font-medium text-xs ${
             isOutOfStock
               ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
               : 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
           }`}
+          style={{ paddingTop: 'calc(0.25rem * 1.12)', paddingBottom: 'calc(0.25rem * 1.12)' }}
         >
           <Plus className="w-3 h-3" />
           <span>{isOutOfStock ? 'OUT OF STOCK' : 'ADD'}</span>
