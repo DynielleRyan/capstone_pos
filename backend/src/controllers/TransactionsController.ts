@@ -296,20 +296,14 @@ export const getAllTransactions = async (req: Request, res: Response) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = (page - 1) * limit;
 
-        // Get accurate count: count distinct transactions that have items
-        // This matches the filter used in the data query (Transaction_Item!inner)
-        // We query Transaction_Item to get all TransactionIDs, then count distinct ones
-        const { data: transactionItems, error: countError } = await supabase
-            .from('Transaction_Item')
-            .select('TransactionID');
+        // Use Supabase's built-in count for better performance
+        // This uses PostgreSQL's COUNT which is much faster than fetching all rows
+        const { count: totalCount, error: countError } = await supabase
+            .from('Transaction')
+            .select('TransactionID', { count: 'exact', head: true });
 
-        let totalCount = 0;
         if (countError) {
-            console.error('Error counting transactions with items:', countError);
-        } else if (transactionItems) {
-            // Count distinct TransactionIDs
-            const distinctTransactionIds = new Set(transactionItems.map(item => item.TransactionID));
-            totalCount = distinctTransactionIds.size;
+            console.error('Error counting transactions:', countError);
         }
 
         // Fetch transactions with minimal item data (only first item for preview, no images)
@@ -368,9 +362,9 @@ export const getAllTransactions = async (req: Request, res: Response) => {
             pagination: {
                 page,
                 limit,
-                total: totalCount || 0,
-                totalPages: Math.ceil((totalCount || 0) / limit),
-                hasMore: offset + limit < (totalCount || 0)
+                total: totalCount ?? 0,
+                totalPages: Math.ceil((totalCount ?? 0) / limit),
+                hasMore: offset + limit < (totalCount ?? 0)
             }
         });
     } catch (error) {
