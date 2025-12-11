@@ -59,16 +59,15 @@ const ProductCard: React.FC<ProductCardProps> = ({
           
           {/* Price and VAT Exempt Badge - combined with stock */}
           <div className="flex-shrink-0" style={{ marginBottom: 'calc(0.25rem * 1.12)' }}>
-            <div className="flex items-start justify-between gap-1 mb-0.5">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold text-blue-600">
+            <div className="flex items-start justify-between gap-1 mb-0.5 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="text-sm font-bold text-blue-600 truncate">
                   ₱{customerPrice.toFixed(2)}
                 </div>
               </div>
               {isVATExempt && (
-                <div className="flex items-center space-x-0.5 bg-green-100 text-green-700 px-1 py-0.5 rounded-full flex-shrink-0">
-                  <ShieldCheck className="w-2 h-2 flex-shrink-0" />
-                  <span className="text-[9px] font-medium whitespace-nowrap">VAT Exempt</span>
+                <div className="flex items-center justify-center bg-green-100 text-green-700 rounded-full flex-shrink-0" style={{ width: '16px', height: '16px' }} title="VAT Exempt">
+                  <ShieldCheck className="w-2.5 h-2.5" />
                 </div>
               )}
             </div>

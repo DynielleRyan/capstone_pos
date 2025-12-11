@@ -374,6 +374,11 @@ const Receipt: React.FC<ReceiptProps> = ({
               <span>Payment Method:</span>
               <span><strong>${formatPaymentMethod(paymentMethod)}</strong></span>
             </div>
+            ${isSeniorPWDActive ? `
+            <div class="info-row" style="background-color: #fef2f2; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">
+              <span style="color: #dc2626; font-weight: bold;">✓ Senior/PWD Discount Applied${discount > 0 ? ' (20%)' : ''}</span>
+            </div>
+            ` : ''}
             <div class="divider"></div>
             <table>
               <thead>
@@ -395,8 +400,10 @@ const Receipt: React.FC<ReceiptProps> = ({
                   <tr>
                     <td style="word-break: break-word; overflow-wrap: break-word; hyphens: auto;">
                       ${item.productName}
-                      ${itemDiscount > 0 ? `<br><small style="color: red;">Disc: -₱${itemDiscount.toFixed(2)}</small>` : ''}
-                      ${hasVAT ? `<br><small style="color: #2563eb;">VAT (12%): ₱${itemVAT.toFixed(2)}</small>` : `<br><small style="color: #16a34a;">VAT Exempt</small>`}
+                      <div style="display: flex; flex-direction: column; gap: 2px; margin-top: 2px;">
+                        ${itemDiscount > 0 ? `<small style="color: red; white-space: nowrap;">Disc: -₱${itemDiscount.toFixed(2)}</small>` : ''}
+                        ${hasVAT ? `<small style="color: #2563eb; white-space: nowrap;">VAT (12%): ₱${itemVAT.toFixed(2)}</small>` : `<small style="color: #16a34a; white-space: nowrap;">VAT Exempt</small>`}
+                      </div>
                     </td>
                     <td class="text-center">${item.quantity}</td>
                     <td class="text-right" style="white-space: nowrap;"><strong>₱${item.subtotal.toFixed(2)}</strong></td>
@@ -523,6 +530,14 @@ const Receipt: React.FC<ReceiptProps> = ({
                 <span className="text-gray-600">Payment Method:</span>
                 <span className="font-medium">{formatPaymentMethod(paymentMethod)}</span>
               </div>
+              {isSeniorPWDActive && (
+                <div className="flex justify-between items-center bg-red-50 px-3 py-2 rounded-lg mt-2 border border-red-200">
+                  <span className="text-red-700 font-semibold text-sm flex items-center gap-2">
+                    <span className="text-red-600">✓</span>
+                    Senior/PWD Discount Applied{discount > 0 ? ' (20%)' : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-dashed border-gray-400 my-4"></div>
@@ -545,22 +560,24 @@ const Receipt: React.FC<ReceiptProps> = ({
                     
                     return (
                       <tr key={index} className="border-b border-gray-200">
-                        <td className="py-2 text-gray-800">
-                          <div className="font-medium">{item.productName}</div>
-                          {itemDiscount > 0 && (
-                            <div className="text-xs text-red-600">
-                              Discount: ₱{itemDiscount.toFixed(2)}
-                            </div>
-                          )}
-                          {hasVAT ? (
-                            <div className="text-xs text-blue-600 font-medium">
-                              VAT (12%): ₱{itemVAT.toFixed(2)}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-green-600 font-medium">
-                              VAT Exempt
-                            </div>
-                          )}
+                        <td className="py-2 text-gray-800 min-w-0">
+                          <div className="font-medium break-words">{item.productName}</div>
+                          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 mt-1">
+                            {itemDiscount > 0 && (
+                              <div className="text-xs text-red-600 whitespace-nowrap">
+                                Discount: ₱{itemDiscount.toFixed(2)}
+                              </div>
+                            )}
+                            {hasVAT ? (
+                              <div className="text-xs text-blue-600 font-medium whitespace-nowrap">
+                                VAT (12%): ₱{itemVAT.toFixed(2)}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-green-600 font-medium whitespace-nowrap">
+                                VAT Exempt
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="text-center py-2 text-gray-700">{item.quantity}</td>
                         <td className="text-right py-2 text-gray-700">₱{item.unitPrice.toFixed(2)}</td>

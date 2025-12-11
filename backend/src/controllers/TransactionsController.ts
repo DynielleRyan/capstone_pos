@@ -378,10 +378,12 @@ export const getAllTransactions = async (req: Request, res: Response) => {
 };
 
 // Get a specific transaction by ID with its items and product details
+// This function also calculates missing VATAmount and DiscountAmount for old transactions
 export const getTransactionById = async (req: Request, res: Response) => {
     try {
         const id = req.params.id;
         // Fetch single transaction with related data
+        // Include Product details needed for VAT/Discount calculation
         const { data, error } = await supabase
             .from('Transaction')
             .select(`
@@ -390,7 +392,9 @@ export const getTransactionById = async (req: Request, res: Response) => {
                     *,
                     Product (
                         Name,
-                        Image
+                        Image,
+                        IsVATExemptYN,
+                        SeniorPWDYN
                     )
                 )
             `)
@@ -398,6 +402,59 @@ export const getTransactionById = async (req: Request, res: Response) => {
             .single();
 
         if (error) throw error;
+
+        // Check if this is an old transaction with missing VAT/Discount data
+        // If SeniorPWDID exists, we can calculate the breakdown retroactively
+        const isSeniorPWDActive = !!data.SeniorPWDID;
+        const discountPercent = 0.20; // 20% Senior/PWD discount
+
+        // Calculate missing VATAmount and DiscountAmount for old transactions
+        if (data.Transaction_Item && Array.isArray(data.Transaction_Item)) {
+            data.Transaction_Item = data.Transaction_Item.map((item: any) => {
+                // If VATAmount or DiscountAmount is null/undefined, calculate it
+                const needsCalculation = 
+                    (item.VATAmount === null || item.VATAmount === undefined) ||
+                    (item.DiscountAmount === null || item.DiscountAmount === undefined);
+
+                if (needsCalculation && item.Product) {
+                    const itemSubtotal = Number(item.UnitPrice) * Number(item.Quantity);
+                    
+                    // Calculate discount (Senior/PWD: 20% of base price)
+                    const itemDiscount = isSeniorPWDActive ? itemSubtotal * discountPercent : 0;
+                    
+                    // Get product VAT exemption status (handle boolean, string, or null values)
+                    const seniorPWDYN = item.Product.SeniorPWDYN === true || item.Product.SeniorPWDYN === 'true';
+                    const isVATExemptYN = item.Product.IsVATExemptYN === true || item.Product.IsVATExemptYN === 'true';
+                    
+                    // Calculate VAT: 12% of base price, unless exempt or Senior/PWD active
+                    // VAT is calculated on base price (before discount), then added on top
+                    let itemVAT = 0;
+                    if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+                        itemVAT = itemSubtotal * 0.12;
+                    }
+
+                    // Fill in missing values (use calculated values if original is null/undefined)
+                    // Convert to number to ensure proper type (Supabase may return strings)
+                    // Round to 2 decimal places to match database precision
+                    return {
+                        ...item,
+                        VATAmount: item.VATAmount != null ? Number(item.VATAmount) : Math.round(itemVAT * 100) / 100,
+                        DiscountAmount: item.DiscountAmount != null ? Number(item.DiscountAmount) : Math.round(itemDiscount * 100) / 100
+                    };
+                } else if (needsCalculation && !item.Product) {
+                    // If Product is missing, we can't calculate - log warning but return item as-is
+                    console.warn(`⚠️ Cannot calculate VAT/Discount for Transaction_Item ${item.TransactionItemID}: Product data missing`);
+                }
+                
+                // Ensure existing values are numbers (not strings from database)
+                return {
+                    ...item,
+                    VATAmount: item.VATAmount != null ? Number(item.VATAmount) : null,
+                    DiscountAmount: item.DiscountAmount != null ? Number(item.DiscountAmount) : null
+                };
+            });
+        }
+
         res.json(data);
     } catch (error) {
         console.error('Error fetching transaction:', error);
