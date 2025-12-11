@@ -28,6 +28,7 @@ interface Transaction {
   Status: 'completed' | 'pending' | 'cancelled' | 'refunded';
   Items: TransactionItem[];
   ItemCount?: number; // Total number of items (for lazy loading)
+  SeniorPWDID?: string | null; // Senior/PWD ID if discount was applied
 }
 
 interface TransactionItem {
@@ -35,8 +36,8 @@ interface TransactionItem {
   Quantity: number;
   UnitPrice: number;
   Subtotal: number;
-  VATAmount?: number;
-  DiscountAmount?: number;
+  VATAmount: number;  // Always a number (0 if no VAT, calculated by backend if missing)
+  DiscountAmount: number;  // Always a number (0 if no discount, calculated by backend if missing)
   Image?: string;
 }
 
@@ -185,8 +186,10 @@ const HistoryPage = () => {
         Quantity: item.Quantity,
         UnitPrice: item.UnitPrice,
         Subtotal: item.Subtotal,
-        VATAmount: item.VATAmount || 0,
-        DiscountAmount: item.DiscountAmount || 0,
+        // Backend now calculates missing VATAmount and DiscountAmount, so convert to numbers
+        // Use 0 if null/undefined (backend calculation should have filled these in)
+        VATAmount: item.VATAmount != null ? Number(item.VATAmount) : 0,
+        DiscountAmount: item.DiscountAmount != null ? Number(item.DiscountAmount) : 0,
         Image: item.Product?.Image || undefined
       })) || [];
 
@@ -268,26 +271,65 @@ const HistoryPage = () => {
   };
 
   const openTransactionModal = async (transaction: Transaction) => {
-    // Load full transaction items if not already loaded
+    // ALWAYS load full transaction details when opening modal to ensure breakdown is calculated
+    // This ensures we get the calculated VATAmount and DiscountAmount from the backend
     let fullItems = transaction.Items;
-    if (transaction.ItemCount && transaction.ItemCount > 1 && !loadedTransactionItems[transaction.TransactionID]) {
-      const items = await loadTransactionItems(transaction.TransactionID);
-      fullItems = items;
-      
-      // Update transaction with full items
-      setTransactions(prev => prev.map(t => 
-        t.TransactionID === transaction.TransactionID 
-          ? { ...t, Items: items }
-          : t
-      ));
-    } else if (loadedTransactionItems[transaction.TransactionID]) {
+    let transactionData = transaction;
+    
+    // Always fetch full transaction details to get calculated breakdown and SeniorPWDID
+    if (!loadedTransactionItems[transaction.TransactionID]) {
+      try {
+        const response = await api.get(`/transactions/${transaction.TransactionID}`);
+        const fullTransaction = response.data;
+        
+        const items = fullTransaction.Transaction_Item?.map((item: any) => ({
+          ProductName: item.Product?.Name || 'Unknown Product',
+          Quantity: item.Quantity,
+          UnitPrice: item.UnitPrice,
+          Subtotal: item.Subtotal,
+          // Backend now calculates missing VATAmount and DiscountAmount, so convert to numbers
+          // Use 0 if null/undefined (backend calculation should have filled these in)
+          VATAmount: item.VATAmount != null ? Number(item.VATAmount) : 0,
+          DiscountAmount: item.DiscountAmount != null ? Number(item.DiscountAmount) : 0,
+          Image: item.Product?.Image || undefined
+        })) || [];
+        
+        fullItems = items;
+        
+        // Preserve SeniorPWDID from full transaction data
+        transactionData = {
+          ...transaction,
+          SeniorPWDID: fullTransaction.SeniorPWDID || transaction.SeniorPWDID,
+          Items: items
+        };
+        
+        // Cache loaded items
+        setLoadedTransactionItems(prev => ({
+          ...prev,
+          [transaction.TransactionID]: items
+        }));
+        
+        // Update transaction with full items and SeniorPWDID
+        setTransactions(prev => prev.map(t => 
+          t.TransactionID === transaction.TransactionID 
+            ? transactionData
+            : t
+        ));
+      } catch (error) {
+        console.error('Error loading transaction details:', error);
+        // Fallback to existing transaction data
+        transactionData = transaction;
+      }
+    } else {
+      // Use cached items if available
       fullItems = loadedTransactionItems[transaction.TransactionID];
+      transactionData = {
+        ...transaction,
+        Items: fullItems
+      };
     }
 
-    setSelectedTransaction({
-      ...transaction,
-      Items: fullItems
-    });
+    setSelectedTransaction(transactionData);
     setIsModalOpen(true);
   };
 
@@ -821,9 +863,9 @@ const HistoryPage = () => {
               </div>
               <button
                 onClick={closeModal}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="w-5 h-5 text-blue-600" />
               </button>
             </div>
 
@@ -885,6 +927,21 @@ const HistoryPage = () => {
                       })()}
                     </span>
                   </div>
+                  {/* Senior/PWD Discount Indicator */}
+                  {selectedTransaction.SeniorPWDID && (
+                    <div className="flex items-center space-x-2 bg-red-50 px-3 py-2 rounded-lg border border-red-200">
+                      <div className="flex items-center space-x-2 flex-1">
+                        <span className="text-red-600 font-semibold text-sm">✓</span>
+                        <span className="text-sm text-red-700 font-medium">Senior/PWD Discount Applied (20%)</span>
+                      </div>
+                    </div>
+                  )}
+                  {selectedTransaction.SeniorPWDID && (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">Senior/PWD ID:</span>
+                      <span className="font-medium text-gray-800 bg-gray-100 px-2 py-1 rounded">{selectedTransaction.SeniorPWDID}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -929,7 +986,7 @@ const HistoryPage = () => {
                       </div>
 
                       {/* Price Breakdown */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 text-sm">
                         {/* Base Amount */}
                         <div className="text-center">
                           <div className="text-gray-500">Base Amount</div>
@@ -939,16 +996,20 @@ const HistoryPage = () => {
                         {/* Discount */}
                         <div className="text-center">
                           <div className="text-gray-500">Discount</div>
-                          <div className={`font-medium ${(item.DiscountAmount ?? 0) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                            {(item.DiscountAmount ?? 0) > 0 ? `-₱${(item.DiscountAmount ?? 0).toFixed(2)}` : '₱0.00'}
+                          <div className={`font-medium ${
+                            item.DiscountAmount > 0 ? 'text-red-600' : 'text-gray-400'
+                          }`}>
+                            {item.DiscountAmount > 0 ? `-₱${item.DiscountAmount.toFixed(2)}` : '₱0.00'}
                           </div>
                         </div>
 
                         {/* VAT */}
                         <div className="text-center">
                           <div className="text-gray-500">VAT (12%)</div>
-                          <div className={`font-medium ${(item.VATAmount ?? 0) > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
-                            {(item.VATAmount ?? 0) > 0 ? `₱${(item.VATAmount ?? 0).toFixed(2)}` : '₱0.00'}
+                          <div className={`font-medium ${
+                            item.VATAmount > 0 ? 'text-blue-600' : 'text-gray-400'
+                          }`}>
+                            {item.VATAmount > 0 ? `₱${item.VATAmount.toFixed(2)}` : '₱0.00'}
                           </div>
                         </div>
 
@@ -959,28 +1020,19 @@ const HistoryPage = () => {
                         </div>
                       </div>
 
-                      {/* Note for older transactions */}
-                      {(item.VATAmount ?? 0) === 0 && (item.DiscountAmount ?? 0) === 0 && (
-                        <div className="text-center">
-                          <p className="text-xs text-gray-500 italic">
-                            * Detailed breakdown not available for this transaction
-                          </p>
-                        </div>
-                      )}
-
                       {/* Discount/VAT Status */}
                       <div className="flex justify-center space-x-4">
-                        {(item.DiscountAmount ?? 0) > 0 && (
+                        {item.DiscountAmount > 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             ✓ Discounted
                           </span>
                         )}
-                        {(item.VATAmount ?? 0) > 0 && (
+                        {item.VATAmount > 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             VAT Applied
                           </span>
                         )}
-                        {(item.DiscountAmount ?? 0) === 0 && (item.VATAmount ?? 0) === 0 && (
+                        {item.DiscountAmount === 0 && item.VATAmount === 0 && (
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                             No Discount/VAT
                           </span>
@@ -1004,7 +1056,7 @@ const HistoryPage = () => {
             <div className="flex justify-end p-6 border-t bg-gray-50">
               <button
                 onClick={closeModal}
-                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Close
               </button>
