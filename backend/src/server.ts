@@ -39,7 +39,7 @@ import transactionRoutes from './routes/transactions';  // Transaction endpoints
 import inventoryRoutes from './routes/inventory';     // Inventory management endpoints
 
 // Create Express application instance - this is our web server
-const app = express();
+const app = express(); 
 
 // Set server port - uses environment variable PORT or defaults to 5002
 // Railway deployment platform sets PORT automatically

@@ -118,11 +118,8 @@ export const createTransaction = async (req: Request, res: Response) => {
         let totalVATExemptAmount = 0;
         const transactionItems = items.map((item: any) => {
             const itemSubtotal = item.quantity * item.unitPrice;
-            // Senior/PWD discount: Applied to selling price only (Philippine law)
-            // Discount is applied to base selling price, not to (selling price + VAT)
-            const itemDiscount = isSeniorPWDActive ? itemSubtotal * discountPercent : 0;
             
-            // Get product details
+            // Get product details FIRST (needed for discount and VAT calculation)
             const productDetails = productMap.get(item.productId);
             // Handle boolean, string, or null values for SeniorPWDYN
             const seniorPWDYN = productDetails?.SeniorPWDYN === true || productDetails?.SeniorPWDYN === 'true';
@@ -132,14 +129,19 @@ export const createTransaction = async (req: Request, res: Response) => {
             // Debug logging
             console.log(`Product ${item.productId}: SeniorPWDYN=${productDetails?.SeniorPWDYN}, isSeniorPWDActive=${isSeniorPWDActive}, isVATExemptYN=${isVATExemptYN}`);
             
+            // Senior/PWD discount: Only apply if transaction is active AND product has SeniorPWDYN = true
+            // Discount is applied to base selling price, not to (selling price + VAT)
+            const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * discountPercent : 0;
+            
             // Calculate VAT:
-            // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
-            // 2. If product has IsVATExemptYN = true, VAT = 0
-            // 3. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+            // VAT exemption is determined ONLY by IsVATExemptYN column
+            // 1. If product has IsVATExemptYN = true, VAT = 0
+            // 2. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+            // Note: Senior/PWD discount does NOT affect VAT - VAT still applies if product is not VAT exempt
             // VAT is added ON TOP of the selling price, not calculated on discounted amount
             let itemVAT = 0;
-            if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
-                itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+            if (!isVATExemptYN) {
+                itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price (applies regardless of Senior/PWD)
             }
             
             // Final amount = base price - discount + VAT
@@ -147,7 +149,8 @@ export const createTransaction = async (req: Request, res: Response) => {
             
             totalDiscountAmount += itemDiscount;
             totalVATAmount += itemVAT;
-            if (itemVAT === 0 && (isVATExemptYN || (isSeniorPWDActive && seniorPWDYN))) {
+            // VAT exempt amount: Only items with IsVATExemptYN = true (Senior/PWD doesn't make items VAT exempt)
+            if (itemVAT === 0 && isVATExemptYN) {
                 totalVATExemptAmount += (itemSubtotal - itemDiscount);
             }
 
@@ -419,17 +422,20 @@ export const getTransactionById = async (req: Request, res: Response) => {
                 if (needsCalculation && item.Product) {
                     const itemSubtotal = Number(item.UnitPrice) * Number(item.Quantity);
                     
-                    // Calculate discount (Senior/PWD: 20% of base price)
-                    const itemDiscount = isSeniorPWDActive ? itemSubtotal * discountPercent : 0;
-                    
                     // Get product VAT exemption status (handle boolean, string, or null values)
                     const seniorPWDYN = item.Product.SeniorPWDYN === true || item.Product.SeniorPWDYN === 'true';
                     const isVATExemptYN = item.Product.IsVATExemptYN === true || item.Product.IsVATExemptYN === 'true';
                     
-                    // Calculate VAT: 12% of base price, unless exempt or Senior/PWD active
+                    // Calculate discount (Senior/PWD: 20% of base price)
+                    // Only apply if transaction is active AND product has SeniorPWDYN = true
+                    const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * discountPercent : 0;
+                    
+                    // Calculate VAT: VAT exemption is determined ONLY by IsVATExemptYN
+                    // 1. If product has IsVATExemptYN = true, VAT = 0
+                    // 2. Otherwise, VAT = 12% of base price (applies regardless of Senior/PWD status)
                     // VAT is calculated on base price (before discount), then added on top
                     let itemVAT = 0;
-                    if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
+                    if (!isVATExemptYN) {
                         itemVAT = itemSubtotal * 0.12;
                     }
 

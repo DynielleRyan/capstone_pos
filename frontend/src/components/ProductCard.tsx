@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, ShieldCheck } from 'lucide-react';
+import { Plus, ShieldCheck, UserCheck } from 'lucide-react';
 
 // Props interface for ProductCard component
 interface ProductCardProps {
@@ -9,6 +9,7 @@ interface ProductCardProps {
   stock?: number;         // Available stock
   sellingPrice: number;   // Base selling price
   isVATExempt: boolean;  // Whether product is VAT exempt
+  isSeniorPWDEligible?: boolean;  // Whether product qualifies for Senior/PWD discount
   onAdd?: () => void;     // Callback function when ADD button is clicked
 }
 
@@ -19,6 +20,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
   stock, 
   sellingPrice,
   isVATExempt,
+  isSeniorPWDEligible = false,
   onAdd 
 }) => {
   const availableStock = stock || 0;
@@ -57,7 +59,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
             {name}
           </h3>
           
-          {/* Price and VAT Exempt Badge - combined with stock */}
+          {/* Price and Badges - combined with stock */}
           <div className="flex-shrink-0" style={{ marginBottom: 'calc(0.25rem * 1.12)' }}>
             <div className="flex items-start justify-between gap-1 mb-0.5 min-w-0">
               <div className="flex-1 min-w-0 overflow-hidden">
@@ -65,11 +67,18 @@ const ProductCard: React.FC<ProductCardProps> = ({
                   ₱{customerPrice.toFixed(2)}
                 </div>
               </div>
-              {isVATExempt && (
-                <div className="flex items-center justify-center bg-green-100 text-green-700 rounded-full flex-shrink-0" style={{ width: '16px', height: '16px' }} title="VAT Exempt">
-                  <ShieldCheck className="w-2.5 h-2.5" />
-                </div>
-              )}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {isSeniorPWDEligible && (
+                  <div className="flex items-center justify-center bg-orange-100 text-orange-700 rounded-full" style={{ width: '20px', height: '20px' }} title="Eligible for Senior / PWD Discount (20%)">
+                    <UserCheck className="w-3.5 h-3.5" />
+                  </div>
+                )}
+                {isVATExempt && (
+                  <div className="flex items-center justify-center bg-green-100 text-green-700 rounded-full" style={{ width: '20px', height: '20px' }} title="VAT Exempt">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </div>
             </div>
             {/* Stock display - inline with price area */}
             <span className={`text-[9px] font-medium ${

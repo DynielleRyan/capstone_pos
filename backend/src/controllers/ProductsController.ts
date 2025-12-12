@@ -74,7 +74,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
         // Step 1: Get products first (limited to 70)
         // We need products first to know which Product_Items to fetch
         const productsResult = await supabase
-            .from('Product')
+                .from('Product')
             .select('ProductID, Name, GenericName, Category, Brand, SellingPrice, IsVATExemptYN, PrescriptionYN, SeniorPWDYN, Image')  // Only select needed columns (faster)
             .eq('IsActive', true)  // Only active products
             .order('Name', { ascending: true })  // Alphabetical order

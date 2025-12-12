@@ -294,8 +294,8 @@ const HistoryPage = () => {
           Image: item.Product?.Image || undefined
         })) || [];
         
-        fullItems = items;
-        
+      fullItems = items;
+      
         // Preserve SeniorPWDID from full transaction data
         transactionData = {
           ...transaction,
@@ -310,11 +310,11 @@ const HistoryPage = () => {
         }));
         
         // Update transaction with full items and SeniorPWDID
-        setTransactions(prev => prev.map(t => 
-          t.TransactionID === transaction.TransactionID 
+      setTransactions(prev => prev.map(t => 
+        t.TransactionID === transaction.TransactionID 
             ? transactionData
-            : t
-        ));
+          : t
+      ));
       } catch (error) {
         console.error('Error loading transaction details:', error);
         // Fallback to existing transaction data
@@ -324,8 +324,8 @@ const HistoryPage = () => {
       // Use cached items if available
       fullItems = loadedTransactionItems[transaction.TransactionID];
       transactionData = {
-        ...transaction,
-        Items: fullItems
+      ...transaction,
+      Items: fullItems
       };
     }
 
@@ -682,23 +682,23 @@ const HistoryPage = () => {
                     <div key={index} className="flex items-center space-x-4">
                       {/* Product Image - Only show when expanded */}
                       {isExpanded ? (
-                        <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
-                          {item.Image && !item.Image.includes('via.placeholder.com') ? (
-                            <img 
-                              src={item.Image} 
-                              alt={item.ProductName}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                // Hide image on error, show placeholder div
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
-                              <span className="text-xs text-gray-400">No Image</span>
-                            </div>
-                          )}
-                        </div>
+                      <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
+                        {item.Image && !item.Image.includes('via.placeholder.com') ? (
+                          <img 
+                            src={item.Image} 
+                            alt={item.ProductName}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Hide image on error, show placeholder div
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
+                            <span className="text-xs text-gray-400">No Image</span>
+                          </div>
+                        )}
+                      </div>
                       ) : (
                         /* Payment Method Badge - Show when retracted */
                         <div className="flex-shrink-0">
@@ -712,7 +712,7 @@ const HistoryPage = () => {
                       <div className="flex-1">
                         <h4 className="font-medium text-gray-800">{item.ProductName}</h4>
                         {isExpanded ? (
-                          <p className="text-sm text-gray-500">Antihistamine</p>
+                        <p className="text-sm text-gray-500">Antihistamine</p>
                         ) : (
                           <div className="flex items-center gap-3 mt-1">
                             <span className="text-xs text-gray-500">
@@ -932,13 +932,13 @@ const HistoryPage = () => {
                     <div className="flex items-center space-x-2 bg-red-50 px-3 py-2 rounded-lg border border-red-200">
                       <div className="flex items-center space-x-2 flex-1">
                         <span className="text-red-600 font-semibold text-sm">✓</span>
-                        <span className="text-sm text-red-700 font-medium">Senior/PWD Discount Applied (20%)</span>
+                        <span className="text-sm text-red-700 font-medium">Senior / PWD Discount Applied (20%)</span>
                       </div>
                     </div>
                   )}
                   {selectedTransaction.SeniorPWDID && (
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-600">Senior/PWD ID:</span>
+                      <span className="text-sm text-gray-600">Senior / PWD ID:</span>
                       <span className="font-medium text-gray-800 bg-gray-100 px-2 py-1 rounded">{selectedTransaction.SeniorPWDID}</span>
                     </div>
                   )}

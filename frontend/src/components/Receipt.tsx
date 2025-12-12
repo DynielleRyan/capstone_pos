@@ -376,7 +376,7 @@ const Receipt: React.FC<ReceiptProps> = ({
             </div>
             ${isSeniorPWDActive ? `
             <div class="info-row" style="background-color: #fef2f2; padding: 4px 8px; border-radius: 4px; margin: 4px 0;">
-              <span style="color: #dc2626; font-weight: bold;">✓ Senior/PWD Discount Applied${discount > 0 ? ' (20%)' : ''}</span>
+              <span style="color: #dc2626; font-weight: bold;">✓ Senior / PWD Discount Applied${discount > 0 ? ' (20%)' : ''}</span>
             </div>
             ` : ''}
             <div class="divider"></div>
@@ -420,7 +420,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               </div>
               ${isSeniorPWDActive && discount > 0 ? `
               <div class="total-row" style="color: red;">
-                <span>Senior/PWD Disc (20%):</span>
+                <span>Senior / PWD Disc (20%):</span>
                 <span>-₱${discount.toFixed(2)}</span>
               </div>
               ` : ''}
@@ -534,7 +534,7 @@ const Receipt: React.FC<ReceiptProps> = ({
                 <div className="flex justify-between items-center bg-red-50 px-3 py-2 rounded-lg mt-2 border border-red-200">
                   <span className="text-red-700 font-semibold text-sm flex items-center gap-2">
                     <span className="text-red-600">✓</span>
-                    Senior/PWD Discount Applied{discount > 0 ? ' (20%)' : ''}
+                    Senior / PWD Discount Applied{discount > 0 ? ' (20%)' : ''}
                   </span>
                 </div>
               )}
@@ -563,20 +563,20 @@ const Receipt: React.FC<ReceiptProps> = ({
                         <td className="py-2 text-gray-800 min-w-0">
                           <div className="font-medium break-words">{item.productName}</div>
                           <div className="flex flex-col sm:flex-row sm:flex-wrap gap-1 mt-1">
-                            {itemDiscount > 0 && (
+                          {itemDiscount > 0 && (
                               <div className="text-xs text-red-600 whitespace-nowrap">
-                                Discount: ₱{itemDiscount.toFixed(2)}
-                              </div>
-                            )}
-                            {hasVAT ? (
+                              Discount: ₱{itemDiscount.toFixed(2)}
+                            </div>
+                          )}
+                          {hasVAT ? (
                               <div className="text-xs text-blue-600 font-medium whitespace-nowrap">
-                                VAT (12%): ₱{itemVAT.toFixed(2)}
-                              </div>
-                            ) : (
+                              VAT (12%): ₱{itemVAT.toFixed(2)}
+                            </div>
+                          ) : (
                               <div className="text-xs text-green-600 font-medium whitespace-nowrap">
-                                VAT Exempt
-                              </div>
-                            )}
+                              VAT Exempt
+                            </div>
+                          )}
                           </div>
                         </td>
                         <td className="text-center py-2 text-gray-700">{item.quantity}</td>
@@ -601,7 +601,7 @@ const Receipt: React.FC<ReceiptProps> = ({
               
               {isSeniorPWDActive && discount > 0 && (
                 <div className="flex justify-between text-red-600">
-                  <span>Senior/PWD Discount (20%):</span>
+                  <span>Senior / PWD Discount (20%):</span>
                   <span className="font-medium">-₱{discount.toFixed(2)}</span>
                 </div>
               )}

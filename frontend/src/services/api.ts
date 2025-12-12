@@ -230,7 +230,7 @@ api.interceptors.response.use(
             isRedirecting = true;
             try {
               // Sign out user from Supabase (clears session)
-              await supabase.auth.signOut();
+      await supabase.auth.signOut();
               
               // Redirect to login page
               // Use replace() instead of push() to prevent back button issues
