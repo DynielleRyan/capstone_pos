@@ -18,7 +18,8 @@ import {
   Sparkles,
   Bandage,
   UtensilsCrossed,
-  Circle
+  Circle,
+  UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CategoryCard from '../components/CategoryCard';
@@ -448,29 +449,36 @@ const DashboardPage = () => {
       return 0; // No discount unless button is clicked
     }
     
-    // Apply 20% discount to entire transaction when button is active
-    const subtotal = calculateSubtotal();
-    return subtotal * 0.2;
+    // Apply 20% discount only to products with SeniorPWDYN = true
+    // Discount is applied to base selling price, not to (selling price + VAT)
+    return cartItems.reduce((total, item) => {
+      const itemSubtotal = item.price * item.quantity;
+      const seniorPWDYN = item.seniorPWDYN === true;
+      // Only discount if Senior/PWD is active AND product has SeniorPWDYN = true
+      const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * 0.2 : 0;
+      return total + itemDiscount;
+    }, 0);
   };
 
   const calculateVAT = () => {
-    // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
+    // Calculate VAT per item based on IsVATExemptYN
     // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+    // VAT exemption is determined ONLY by IsVATExemptYN column
+    // Senior/PWD discount does NOT affect VAT - VAT still applies if product is not VAT exempt
     return cartItems.reduce((totalVAT, item) => {
       const itemSubtotal = item.price * item.quantity;
       
       // Calculate VAT:
-      // 1. If Senior/PWD is active AND product has SeniorPWDYN = true, VAT = 0
-      // 2. If product has IsVATExemptYN = true, VAT = 0
-      // 3. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+      // 1. If product has IsVATExemptYN = true, VAT = 0
+      // 2. Otherwise, VAT = 12% of itemSubtotal (base selling price, before discount)
+      // Note: Senior/PWD status does NOT affect VAT calculation
       // VAT is added ON TOP of the selling price, not calculated on discounted amount
       // Handle boolean or undefined values
-      const seniorPWDYN = item.seniorPWDYN === true;
       const isVATExemptYN = item.isVATExemptYN === true;
       
       let itemVAT = 0;
-      if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
-        itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+      if (!isVATExemptYN) {
+        itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price (applies regardless of Senior/PWD)
       }
       
       return totalVAT + itemVAT;
@@ -479,18 +487,22 @@ const DashboardPage = () => {
 
   const calculateVATExempt = () => {
     // Calculate VAT exempt amount (items with 0 VAT)
+    // VAT exemption is determined ONLY by IsVATExemptYN column
     return cartItems.reduce((totalExempt, item) => {
       const itemSubtotal = item.price * item.quantity;
-      // Senior/PWD discount: 20% of selling price only (Philippine law)
-      // Discount is applied to base selling price, not to (selling price + VAT)
-      const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
       
-      // If item has no VAT (either IsVATExemptYN or SeniorPWDYN when active)
       // Handle boolean or undefined values
       const seniorPWDYN = item.seniorPWDYN === true;
       const isVATExemptYN = item.isVATExemptYN === true;
-      const hasNoVAT = isVATExemptYN || (isSeniorPWDActive && seniorPWDYN);
-      if (hasNoVAT) {
+      
+      // Senior/PWD discount: 20% of selling price only (Philippine law)
+      // Only apply if transaction is active AND product has SeniorPWDYN = true
+      // Discount is applied to base selling price, not to (selling price + VAT)
+      const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * 0.2 : 0;
+      
+      // If item has no VAT (only if IsVATExemptYN = true)
+      // Note: Senior/PWD does NOT make items VAT exempt
+      if (isVATExemptYN) {
         return totalExempt + (itemSubtotal - itemDiscount);
       }
       return totalExempt;
@@ -608,19 +620,23 @@ const DashboardPage = () => {
         const discount = calculateDiscount();
         const receiptItems = cartItems.map(item => {
           const itemSubtotal = item.price * item.quantity;
-          // Senior/PWD discount: 20% of selling price only (Philippine law)
-          // Discount is applied to base selling price, not to (selling price + VAT)
-          const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
           
-          // Calculate VAT per item based on SeniorPWDYN and IsVATExemptYN
-          // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
           // Handle boolean or undefined values
           const seniorPWDYN = item.seniorPWDYN === true;
           const isVATExemptYN = item.isVATExemptYN === true;
           
+          // Senior/PWD discount: 20% of selling price only (Philippine law)
+          // Only apply if transaction is active AND product has SeniorPWDYN = true
+          // Discount is applied to base selling price, not to (selling price + VAT)
+          const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * 0.2 : 0;
+          
+          // Calculate VAT per item based on IsVATExemptYN
+          // VAT exemption is determined ONLY by IsVATExemptYN column
+          // Senior/PWD discount does NOT affect VAT - VAT still applies if product is not VAT exempt
+          // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
           let itemVAT = 0;
-          if (!isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN)) {
-            itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price
+          if (!isVATExemptYN) {
+            itemVAT = itemSubtotal * 0.12; // VAT is 12% of base selling price (applies regardless of Senior/PWD)
           }
           
           // Final amount = base price - discount + VAT
@@ -917,6 +933,7 @@ const DashboardPage = () => {
                       stock={product.stock}
                       sellingPrice={product.SellingPrice}
                       isVATExempt={product.IsVATExemptYN || false}
+                      isSeniorPWDEligible={product.SeniorPWDYN || false}
                       onAdd={() => addToCart(product)}
                     />
                   ))
@@ -992,8 +1009,8 @@ const DashboardPage = () => {
                 }`}
               >
                 {isSeniorPWDActive 
-                  ? `✓ ${seniorPWDType === 'pwd' ? 'PWD' : seniorPWDType === 'senior' ? 'Senior' : 'Senior/PWD'}`
-                  : 'Senior/PWD'}
+                  ? `✓ ${seniorPWDType === 'pwd' ? 'PWD' : seniorPWDType === 'senior' ? 'Senior' : 'Senior / PWD'}`
+                  : 'Senior / PWD'}
               </button>
               <button 
                 onClick={clearCart}
@@ -1018,15 +1035,21 @@ const DashboardPage = () => {
               cartItems.map((item) => {
                 // Calculate item-level VAT info
                 const itemSubtotal = item.price * item.quantity;
-                // Senior/PWD discount: 20% of selling price only (Philippine law)
-                // Discount is applied to base selling price, not to (selling price + VAT)
-                const itemDiscount = isSeniorPWDActive ? itemSubtotal * 0.2 : 0;
                 
-                // Check if item has VAT
-                // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+                // Handle boolean or undefined values
                 const seniorPWDYN = item.seniorPWDYN === true;
                 const isVATExemptYN = item.isVATExemptYN === true;
-                const hasVAT = !isVATExemptYN && !(isSeniorPWDActive && seniorPWDYN);
+                
+                // Senior/PWD discount: 20% of selling price only (Philippine law)
+                // Only apply if transaction is active AND product has SeniorPWDYN = true
+                // Discount is applied to base selling price, not to (selling price + VAT)
+                const itemDiscount = (isSeniorPWDActive && seniorPWDYN) ? itemSubtotal * 0.2 : 0;
+                
+                // Check if item has VAT
+                // VAT exemption is determined ONLY by IsVATExemptYN column
+                // Senior/PWD discount does NOT affect VAT - VAT still applies if product is not VAT exempt
+                // VAT is calculated on base selling price (itemSubtotal), not on discounted amount
+                const hasVAT = !isVATExemptYN; // VAT applies if product is not VAT exempt (regardless of Senior/PWD)
                 const itemVAT = hasVAT ? itemSubtotal * 0.12 : 0; // VAT is 12% of base selling price
                 // Final amount = base price - discount + VAT
                 const itemTotal = itemSubtotal - itemDiscount + itemVAT;
@@ -1045,12 +1068,15 @@ const DashboardPage = () => {
                       onQuantityChange={(newQuantity) => updateQuantity(item.id, newQuantity)}
                       onRemove={() => removeItem(item.id)}
                     />
-                    {/* VAT Status Indicator */}
+                    {/* Price Breakdown */}
                     <div className="px-3 pb-2 text-xs">
                       <div className="flex justify-between items-center text-gray-600">
                         <span>Subtotal: ₱{itemSubtotal.toFixed(2)}</span>
                         {itemDiscount > 0 && (
-                          <span className="text-red-500">Disc: -₱{itemDiscount.toFixed(2)}</span>
+                          <span className="text-red-600 font-medium flex items-center gap-1.5">
+                            <UserCheck className="w-4 h-4" />
+                            Senior / PWD Disc: -₱{itemDiscount.toFixed(2)}
+                          </span>
                         )}
                       </div>
                       <div className="flex justify-between items-center mt-1">
@@ -1058,7 +1084,7 @@ const DashboardPage = () => {
                           <span className="text-blue-600 font-medium">VAT (12%): ₱{itemVAT.toFixed(2)}</span>
                         ) : (
                           <span className="text-green-600 font-medium">
-                            {isSeniorPWDActive && seniorPWDYN ? 'VAT Exempt (Senior/PWD)' : 'VAT Exempt'}
+                            VAT Exempt
                           </span>
                         )}
                         <span className="font-medium">Total: ₱{itemTotal.toFixed(2)}</span>
@@ -1082,7 +1108,7 @@ const DashboardPage = () => {
             {/* Only show discount line if button is active */}
             {isSeniorPWDActive && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Senior/PWD Discount (20%)</span>
+                <span className="text-gray-600">Senior / PWD Discount (20%)</span>
                 <span className="font-medium text-red-500">-₱{calculateDiscount().toFixed(2)}</span>
               </div>
             )}
@@ -1120,7 +1146,7 @@ const DashboardPage = () => {
                   placeholder="₱0" 
                   value={cashReceived}
                   onChange={handleCashReceivedChange}
-                  className={`w-20 text-right border rounded px-1 py-0.5 ${
+                  className={`w-20 text-right border rounded px-1 py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                     !cashReceived || parseFloat(cashReceived) <= 0 
                       ? 'border-red-300 bg-red-50' 
                       : 'border-gray-300'
@@ -1321,7 +1347,7 @@ const DashboardPage = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-xl font-semibold text-gray-800">Senior/PWD Discount</h2>
+              <h2 className="text-xl font-semibold text-gray-800">Senior / PWD Discount</h2>
               <button
                 onClick={() => {
                   setShowSeniorPWDModal(false);
