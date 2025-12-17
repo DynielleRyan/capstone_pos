@@ -476,7 +476,7 @@ const DashboardPage = () => {
   // Show quantity modal for a product (reusable function)
   const showQuantityModalForProduct = (product: Product) => {
     // Check stock
-    if (product.stock <= 0) {
+    if ((product.stock || 0) <= 0) {
       toast.error(`${product.Name} is out of stock.`);
       return;
     }
@@ -535,7 +535,10 @@ const DashboardPage = () => {
     const MAX_SELECTION_RESULTS = 50;
     if (matchingProductsList.length > MAX_SELECTION_RESULTS) {
       matchingProductsList = matchingProductsList.slice(0, MAX_SELECTION_RESULTS);
-      toast.info(`Found many matches. Showing first ${MAX_SELECTION_RESULTS} results. Please refine your search.`);
+      toast(`Found many matches. Showing first ${MAX_SELECTION_RESULTS} results. Please refine your search.`, {
+        icon: 'ℹ️',
+        duration: 4000
+      });
     }
     
     // If only one match, show quantity modal directly
@@ -930,7 +933,7 @@ const DashboardPage = () => {
         
         clearCartSilently(); // Clear cart without confirmation after successful transaction
         // Refresh products to update stock numbers in real-time
-        fetchProducts(false); // Don't show loading spinner when refreshing after transaction
+        fetchProducts(1, false, false); // Refresh products without showing loading spinner
         setShowReceipt(true);
         // Optionally navigate to history page
         // navigate('/history');
@@ -1819,7 +1822,7 @@ const DashboardPage = () => {
                 <p className="text-gray-500 text-center py-8">No products to display</p>
               ) : (
                 <div className="space-y-2" role="list">
-                  {matchingProducts.map((product, index) => (
+                  {matchingProducts.map((product) => (
                     <button
                       key={product.ProductID}
                       onClick={() => handleProductSelect(product)}
