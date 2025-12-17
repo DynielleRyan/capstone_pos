@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Grid3X3, 
@@ -109,6 +109,10 @@ const DashboardPage = () => {
   // Product selection modal state (for multiple matches)
   const [showProductSelectionModal, setShowProductSelectionModal] = useState(false);
   const [matchingProducts, setMatchingProducts] = useState<Product[]>([]);
+  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0); // For arrow key navigation
+  
+  // Search input ref for auto-focus
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Receipt state
   const [showReceipt, setShowReceipt] = useState(false);
@@ -166,7 +170,10 @@ const DashboardPage = () => {
   const fetchProducts = useCallback(async (page: number = 1, append: boolean = false, showLoading: boolean = true) => {
       // Prevent duplicate simultaneous calls
       if (isFetching && !append) {
-        console.log('⚠️ Fetch already in progress, skipping duplicate call');
+        // Prevent duplicate simultaneous calls
+        if (import.meta.env.DEV) {
+          console.log('⚠️ Fetch already in progress, skipping duplicate call');
+        }
         return;
       }
       
@@ -481,6 +488,9 @@ const DashboardPage = () => {
       return;
     }
     
+    // Remove focus from search input when quantity modal opens
+    searchInputRef.current?.blur();
+    
     // Show quantity modal
     setSelectedProductForQuantity(product);
     setQuantityInput('1');
@@ -488,46 +498,45 @@ const DashboardPage = () => {
   };
 
   // Handle Enter key in search - find ALL matching products and show selection if multiple
-  const handleSearchEnter = () => {
+  const handleSearchEnter = async () => {
     // Validate search term
     const trimmedSearch = searchTerm.trim();
     if (trimmedSearch.length < 2) {
       toast.error('Please enter at least 2 characters to search.');
+      // Keep focus on search input
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       return;
     }
     
     // Limit search term length to prevent performance issues
     if (trimmedSearch.length > 100) {
       toast.error('Search term is too long. Please use a shorter search term.');
+      // Keep focus on search input
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       return;
     }
     
-    // Find all products from current search results or all products
-    const searchResults = products.length > 0 ? products : allProducts;
-    
-    if (searchResults.length === 0) {
-      toast.error('No products found. Please try a different search term.');
-      return;
-    }
-    
+    // Trigger search immediately (bypass debounce) to get fresh results
     let matchingProductsList: Product[] = [];
     
     try {
-      // Find ALL products that match search term
-      const searchLower = trimmedSearch.toLowerCase();
-      matchingProductsList = searchResults.filter(product => 
-        product.Name?.toLowerCase().includes(searchLower) ||
-        product.GenericName?.toLowerCase().includes(searchLower) ||
-        product.Brand?.toLowerCase().includes(searchLower)
-      );
-    } catch (error) {
-      console.error('Error filtering products:', error);
-      toast.error('An error occurred while searching. Please try again.');
+      // Call search API directly to get fresh results
+      setIsSearching(true);
+      const response = await api.get(`/products/search?q=${encodeURIComponent(trimmedSearch)}&limit=100`);
+      matchingProductsList = response.data.data || [];
+      setIsSearching(false);
+    } catch (err: any) {
+      console.error('Error searching products:', err);
+      setIsSearching(false);
+      toast.error('Search failed. Please try again.');
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       return;
     }
     
     if (matchingProductsList.length === 0) {
       toast.error(`No products found matching "${trimmedSearch}". Please try a different search term.`);
+      // Keep focus on search input
+      setTimeout(() => searchInputRef.current?.focus(), 100);
       return;
     }
     
@@ -541,15 +550,20 @@ const DashboardPage = () => {
       });
     }
     
-    // If only one match, show quantity modal directly
+    // Always show selection modal if there are multiple matches (even if just 2)
+    // Only show quantity modal directly if there's exactly 1 match
     if (matchingProductsList.length === 1) {
       showQuantityModalForProduct(matchingProductsList[0]);
+      // Don't refocus here - will refocus after adding to cart
       return;
     }
     
-    // If multiple matches, show selection modal
+    // If multiple matches (2 or more), show selection modal
     setMatchingProducts(matchingProductsList);
+    setSelectedProductIndex(0); // Reset to first product
     setShowProductSelectionModal(true);
+    // Remove focus from search input when modal opens
+    searchInputRef.current?.blur();
   };
 
   // Handle product selection from modal
@@ -566,30 +580,140 @@ const DashboardPage = () => {
       return;
     }
     
+    // Close product selection modal immediately
     setShowProductSelectionModal(false);
     setMatchingProducts([]);
-    showQuantityModalForProduct(product);
+    setSelectedProductIndex(0);
+    
+    // Use requestAnimationFrame to ensure modal closes before opening quantity modal
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        showQuantityModalForProduct(product);
+      });
+    });
   };
 
-  // Handle Escape key to close modals
+  // Handle keyboard navigation in product selection modal
+  const handleProductSelectionKeyDown = (e: React.KeyboardEvent, product: Product, index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleProductSelect(product);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIndex = Math.min(index + 1, matchingProducts.length - 1);
+      setSelectedProductIndex(nextIndex);
+      // Scroll into view
+      const element = document.getElementById(`product-option-${nextIndex}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex = Math.max(index - 1, 0);
+      setSelectedProductIndex(prevIndex);
+      // Scroll into view
+      const element = document.getElementById(`product-option-${prevIndex}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  };
+
+  // Auto-focus search input on mount
+  useEffect(() => {
+    // Focus search input when component mounts
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+  }, []);
+
+  // Handle Escape key to close modals and arrow keys in product selection
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (showProductSelectionModal) {
           setShowProductSelectionModal(false);
           setMatchingProducts([]);
+          setSelectedProductIndex(0);
+          // Refocus search input
+          setTimeout(() => searchInputRef.current?.focus(), 100);
         }
         if (showQuantityModal) {
           setShowQuantityModal(false);
+          setShowProductSelectionModal(false);
           setSelectedProductForQuantity(null);
           setQuantityInput('1');
+          setMatchingProducts([]);
+          setSelectedProductIndex(0);
+          // Refocus search input when closing quantity modal
+          setTimeout(() => searchInputRef.current?.focus(), 100);
+        }
+      }
+    };
+
+    // Handle arrow keys in product selection modal
+    // IMPORTANT: Only handle keys when product selection modal is open AND quantity modal is NOT open
+    const handleProductSelectionKeys = (e: KeyboardEvent) => {
+      // Only handle if product selection modal is open AND quantity modal is closed
+      if (showProductSelectionModal && !showQuantityModal && matchingProducts.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedProductIndex(prev => {
+            const nextIndex = Math.min(prev + 1, matchingProducts.length - 1);
+            // Scroll into view
+            setTimeout(() => {
+              const element = document.getElementById(`product-option-${nextIndex}`);
+              element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 0);
+            return nextIndex;
+          });
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedProductIndex(prev => {
+            const prevIndex = Math.max(prev - 1, 0);
+            // Scroll into view
+            setTimeout(() => {
+              const element = document.getElementById(`product-option-${prevIndex}`);
+              element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 0);
+            return prevIndex;
+          });
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          const selectedProduct = matchingProducts[selectedProductIndex];
+          if (selectedProduct && (selectedProduct.stock || 0) > 0) {
+            // Validate product before proceeding
+            if (!selectedProduct || !selectedProduct.ProductID) {
+              toast.error('Invalid product selected. Please try again.');
+              return;
+            }
+            
+            // Check stock before showing quantity modal
+            if ((selectedProduct.stock || 0) <= 0) {
+              toast.error(`${selectedProduct.Name} is out of stock.`);
+              return;
+            }
+            
+            // Close product selection modal immediately
+            setShowProductSelectionModal(false);
+            setMatchingProducts([]);
+            setSelectedProductIndex(0);
+            
+            // Use requestAnimationFrame to ensure modal closes before opening quantity modal
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                showQuantityModalForProduct(selectedProduct);
+              });
+            });
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [showProductSelectionModal, showQuantityModal]);
+    window.addEventListener('keydown', handleProductSelectionKeys);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('keydown', handleProductSelectionKeys);
+    };
+  }, [showProductSelectionModal, showQuantityModal, matchingProducts, selectedProductIndex]);
 
   // Handle quantity modal confirmation
   const handleQuantityConfirm = () => {
@@ -620,11 +744,18 @@ const DashboardPage = () => {
     // Add to cart
     try {
       addToCart(selectedProductForQuantity, quantity);
+      // Close both modals
       setShowQuantityModal(false);
+      setShowProductSelectionModal(false);
       setSelectedProductForQuantity(null);
       setQuantityInput('1');
+      // Clear product selection modal state
+      setMatchingProducts([]);
+      setSelectedProductIndex(0);
       // Clear search after adding
       setSearchTerm('');
+      // Refocus search input
+      setTimeout(() => searchInputRef.current?.focus(), 100);
     } catch (error) {
       console.error('Error adding to cart:', error);
       toast.error('Failed to add product to cart. Please try again.');
@@ -943,7 +1074,9 @@ const DashboardPage = () => {
       }
     } catch (error: any) {
       console.error('Transaction error:', error);
-      console.error('Error details:', error.response?.data); // Debug log
+      if (import.meta.env.DEV) {
+        console.error('Error details:', error.response?.data);
+      }
       toast.dismiss(loadingToast);
       toast.error('Transaction failed. Please try again.');
     } finally {
@@ -1011,6 +1144,7 @@ const DashboardPage = () => {
         <div className="bg-white shadow-sm p-4 flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
           <div className="relative w-full sm:w-auto">
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search products..."
               value={searchTerm}
@@ -1022,6 +1156,7 @@ const DashboardPage = () => {
                 }
               }}
               className="w-full sm:w-80 pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
             />
             <Search className="absolute right-3 top-2.5 w-5 h-5 text-gray-400" />
           </div>
@@ -1781,7 +1916,8 @@ const DashboardPage = () => {
       )}
 
       {/* Product Selection Modal - Shows when multiple products match search */}
-      {showProductSelectionModal && matchingProducts.length > 0 && (
+      {/* Only show if quantity modal is NOT open */}
+      {showProductSelectionModal && !showQuantityModal && matchingProducts.length > 0 && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={(e) => {
@@ -1822,14 +1958,37 @@ const DashboardPage = () => {
                 <p className="text-gray-500 text-center py-8">No products to display</p>
               ) : (
                 <div className="space-y-2" role="list">
-                  {matchingProducts.map((product) => (
+                  {matchingProducts.map((product, index) => (
                     <button
                       key={product.ProductID}
-                      onClick={() => handleProductSelect(product)}
+                      id={`product-option-${index}`}
+                      onClick={() => {
+                        // Close product selection modal immediately
+                        setShowProductSelectionModal(false);
+                        setMatchingProducts([]);
+                        setSelectedProductIndex(0);
+                        // Then handle product selection
+                        requestAnimationFrame(() => {
+                          requestAnimationFrame(() => {
+                            handleProductSelect(product);
+                          });
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        // Only handle if product selection modal is still open
+                        if (showProductSelectionModal && !showQuantityModal) {
+                          handleProductSelectionKeyDown(e, product, index);
+                        }
+                      }}
                       disabled={(product.stock || 0) <= 0}
-                      className="w-full p-4 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={`w-full p-4 border rounded-lg transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        selectedProductIndex === index
+                          ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-500'
+                          : 'border-gray-200 hover:bg-blue-50 hover:border-blue-300'
+                      }`}
                       role="listitem"
                       aria-label={`Select ${product.Name}, Price: ₱${product.SellingPrice.toFixed(2)}, Stock: ${product.stock || 0}`}
+                      aria-selected={selectedProductIndex === index}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -1883,15 +2042,19 @@ const DashboardPage = () => {
       )}
 
       {/* Quantity Input Modal */}
+      {/* Higher z-index to ensure it appears above product selection modal */}
       {showQuantityModal && selectedProductForQuantity && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]"
           onClick={(e) => {
             // Close modal when clicking outside
             if (e.target === e.currentTarget) {
               setShowQuantityModal(false);
+              setShowProductSelectionModal(false);
               setSelectedProductForQuantity(null);
               setQuantityInput('1');
+              setMatchingProducts([]);
+              setSelectedProductIndex(0);
             }
           }}
           role="dialog"
@@ -1905,8 +2068,11 @@ const DashboardPage = () => {
               <button
                 onClick={() => {
                   setShowQuantityModal(false);
+                  setShowProductSelectionModal(false);
                   setSelectedProductForQuantity(null);
                   setQuantityInput('1');
+                  setMatchingProducts([]);
+                  setSelectedProductIndex(0);
                 }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 aria-label="Close quantity modal"
@@ -1967,11 +2133,24 @@ const DashboardPage = () => {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleQuantityConfirm();
+                      e.stopPropagation();
+                      // Only submit if quantity is valid
+                      const quantity = parseInt(quantityInput);
+                      if (!isNaN(quantity) && quantity > 0 && quantity <= (selectedProductForQuantity.stock || 0)) {
+                        handleQuantityConfirm();
+                      } else {
+                        toast.error('Please enter a valid quantity');
+                      }
                     } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setShowQuantityModal(false);
+                      setShowProductSelectionModal(false);
                       setSelectedProductForQuantity(null);
                       setQuantityInput('1');
+                      setMatchingProducts([]);
+                      setSelectedProductIndex(0);
+                      setTimeout(() => searchInputRef.current?.focus(), 100);
                     }
                   }}
                   autoFocus
@@ -1991,8 +2170,12 @@ const DashboardPage = () => {
               <button
                 onClick={() => {
                   setShowQuantityModal(false);
+                  setShowProductSelectionModal(false);
                   setSelectedProductForQuantity(null);
                   setQuantityInput('1');
+                  setMatchingProducts([]);
+                  setSelectedProductIndex(0);
+                  setTimeout(() => searchInputRef.current?.focus(), 100);
                 }}
                 className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
@@ -2000,6 +2183,12 @@ const DashboardPage = () => {
               </button>
               <button
                 onClick={handleQuantityConfirm}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleQuantityConfirm();
+                  }
+                }}
                 disabled={!quantityInput || parseInt(quantityInput) <= 0 || parseInt(quantityInput) > (selectedProductForQuantity.stock || 0)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
               >
