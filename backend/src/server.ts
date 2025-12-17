@@ -4,72 +4,78 @@
  * ============================================================================
  * 
  * This is the main server file that initializes the Express.js backend application.
- * It sets up middleware, configures CORS, registers routes, and starts the HTTP server.
+ * It orchestrates the entire backend by setting up middleware, configuring security,
+ * registering API routes, and starting the HTTP server.
  * 
- * FLOW:
- * 1. Import dependencies (Express, CORS, routes, database)
- * 2. Create Express app instance
- * 3. Configure CORS (Cross-Origin Resource Sharing) for security
- * 4. Add middleware (JSON parser, cookie parser)
- * 5. Register API route handlers
- * 6. Add utility endpoints (health check, database test)
- * 7. Start HTTP server on specified port
+ * ARCHITECTURE:
+ * - Express.js handles HTTP request/response cycle
+ * - Middleware stack processes requests in order (CORS → JSON → Cookies → Routes)
+ * - Route handlers delegate to controllers for business logic
+ * - Supabase provides database and authentication services
  */
 
-// Import Express framework - handles HTTP requests and routing
 import express from 'express';
-
-// Import CORS middleware - allows frontend to make requests from different origin
 import cors from 'cors';
-
-// Import cookie parser - enables reading/writing cookies (for JWT tokens)
 import cookieParser from 'cookie-parser';
-
-// Import dotenv - loads environment variables from .env file
-// This makes process.env variables available (like SUPABASE_URL, PORT, etc.)
 import 'dotenv/config';
-
-// Import Supabase database client - used for database connection testing
 import { supabase } from './utils/database';
+import productRoutes from './routes/products';
+import authRoutes from './routes/auth';
+import transactionRoutes from './routes/transactions';
+import inventoryRoutes from './routes/inventory';
 
-// Import route handlers - these define the API endpoints
-import productRoutes from './routes/products';        // Product management endpoints
-import authRoutes from './routes/auth';                // Authentication endpoints
-import transactionRoutes from './routes/transactions';  // Transaction endpoints
-import inventoryRoutes from './routes/inventory';     // Inventory management endpoints
-
-// Create Express application instance - this is our web server
+/**
+ * Express Application Instance
+ * 
+ * This is the core of our backend server. It handles all incoming HTTP requests,
+ * routes them to appropriate handlers, and sends responses back to clients.
+ * Middleware functions are applied in the order they're registered, so CORS
+ * must come before route handlers to allow cross-origin requests.
+ */
 const app = express(); 
 
-// Set server port - uses environment variable PORT or defaults to 5002
-// Railway deployment platform sets PORT automatically
+/**
+ * Server Port Configuration
+ * 
+ * Uses PORT environment variable if available (set by deployment platforms like Railway),
+ * otherwise defaults to 5002 for local development. This allows the same codebase to
+ * work in both development and production environments without modification.
+ */
 const PORT = process.env.PORT || 5002;
 
 /**
  * ============================================================================
  * MIDDLEWARE CONFIGURATION
  * ============================================================================
- * Middleware functions execute in order and can modify requests/responses
+ * 
+ * Middleware functions are executed in the order they're registered. Each middleware
+ * can inspect, modify, or terminate the request/response cycle. They run before
+ * route handlers, allowing us to add cross-cutting concerns like security, parsing,
+ * and logging without cluttering route handlers.
  */
 
 /**
  * CORS (Cross-Origin Resource Sharing) Configuration
  * 
- * PURPOSE: Allows frontend (running on different port/domain) to make API requests
- * SECURITY: Only allows requests from whitelisted origins
+ * SECURITY MECHANISM: Prevents unauthorized websites from making requests to our API.
  * 
- * How it works:
- * - Checks if request origin is in allowedOrigins list
- * - If yes: allows request (callback(null, true))
- * - If no: blocks request (callback(error))
+ * HOW IT WORKS:
+ * - Browser sends "Origin" header with every cross-origin request
+ * - Our server checks if the origin is in the whitelist
+ * - If whitelisted: Server responds with CORS headers allowing the request
+ * - If not whitelisted: Browser blocks the response (even if server processes it)
  * 
- * Production: Uses ALLOWED_ORIGINS env variable (comma-separated URLs)
- * Development: Uses localhost ports (Vite dev server uses random ports)
+ * ORIGIN WHITELIST:
+ * - Production: Reads from ALLOWED_ORIGINS env variable (comma-separated URLs)
+ * - Development: Uses multiple localhost ports because Vite dev server can use
+ *   any available port (5173-5178 covers most scenarios)
+ * 
+ * CREDENTIALS: Enabled to allow httpOnly cookies (device tokens) to be sent
+ * cross-origin. Without this, cookies are stripped by the browser.
  */
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')  // Split comma-separated URLs from env
+    ? process.env.ALLOWED_ORIGINS.split(',')
     : [
-        // Default localhost ports for development
         "http://localhost:5173",
         "http://localhost:5179",
         "http://localhost:5174",
@@ -79,47 +85,59 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
         "http://localhost:5178"
     ];
 
-// Apply CORS middleware to all routes
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, Postman, curl)
-        // This is needed for some API testing tools
+        /**
+         * Requests with no origin (null) come from:
+         * - Mobile apps
+         * - Postman/API testing tools
+         * - Server-to-server requests
+         * 
+         * We allow these because they're not subject to CORS restrictions
+         * (CORS is a browser security feature, not applicable to non-browser clients)
+         */
         if (!origin) return callback(null, true);
         
-        // Check if origin is in whitelist
+        /**
+         * Origin validation: Check if the requesting origin is in our whitelist.
+         * The callback pattern is required by CORS middleware:
+         * - callback(null, true) = Allow request, no error
+         * - callback(error) = Block request, return error
+         */
         if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);  // Allow request
+            callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));  // Block request
+            callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true  // Allows cookies to be sent with requests (needed for JWT tokens)
+    credentials: true
 }));
 
 /**
- * Express JSON Middleware
+ * JSON Body Parser Middleware
  * 
- * PURPOSE: Parses incoming JSON request bodies
+ * Automatically parses JSON request bodies and makes them available as JavaScript
+ * objects in req.body. Without this, req.body would be undefined or a raw string.
  * 
- * How it works:
- * - Automatically parses JSON data from request body
- * - Makes data available in req.body
+ * EXAMPLE:
+ * Client sends: POST /api/products with body {"name": "Paracetamol", "price": 50}
+ * After middleware: req.body = { name: "Paracetamol", price: 50 }
  * 
- * Example: POST /api/products with JSON body
- *          → req.body contains the parsed JSON object
+ * This is essential for REST APIs that accept JSON payloads for creating/updating resources.
  */
 app.use(express.json());
 
 /**
  * Cookie Parser Middleware
  * 
- * PURPOSE: Parses cookies from incoming requests
+ * Extracts cookies from the Cookie header and parses them into req.cookies object.
+ * Required for reading httpOnly cookies that store device tokens for first-time login
+ * verification. These cookies cannot be accessed via JavaScript (security feature),
+ * so they must be read server-side.
  * 
- * How it works:
- * - Reads cookies from request headers
- * - Makes cookies available in req.cookies
- * 
- * Used for: JWT token storage in httpOnly cookies (secure authentication)
+ * EXAMPLE:
+ * Cookie header: "device_token_123=abc123; session=xyz789"
+ * After middleware: req.cookies = { device_token_123: "abc123", session: "xyz789" }
  */
 app.use(cookieParser());
 
@@ -128,96 +146,120 @@ app.use(cookieParser());
  * API ROUTE REGISTRATION
  * ============================================================================
  * 
- * Routes map URL paths to controller functions
- * All routes are prefixed with /api for consistency
+ * Routes map HTTP requests (method + path) to controller functions that handle
+ * business logic. All routes are prefixed with /api to distinguish API endpoints
+ * from static files or other routes.
  * 
- * ROUTE STRUCTURE:
- * /api/{resource}/{action}
+ * ROUTING PATTERN:
+ * - app.use('/api/resource', router) mounts the router at that path
+ * - Router defines sub-routes like GET /, POST /, GET /:id
+ * - Combined: GET /api/resource/:id → router handles GET /:id
  * 
- * Examples:
- * - GET /api/products → getAllProducts controller
- * - POST /api/transactions → createTransaction controller
+ * This separation allows each resource to have its own route file, keeping code
+ * organized and maintainable as the API grows.
  */
 
 /**
- * Product Routes
- * Handles all product-related operations
+ * Product Management Routes
  * 
- * Endpoints:
- * - GET    /api/products          → Get all products
- * - GET    /api/products/:id      → Get single product
- * - POST   /api/products          → Create new product
- * - PUT    /api/products/:id      → Update product
- * - DELETE /api/products/:id      → Delete product
+ * Handles CRUD operations for products and product search. Products are the core
+ * inventory items sold in the pharmacy. Routes include:
+ * - Listing products with pagination and stock information
+ * - Searching products by name, brand, or generic name
+ * - Creating, updating, and deleting products
+ * 
+ * Stock information is calculated by aggregating Product_Item records, which
+ * represent individual batches with expiry dates.
  */
 app.use('/api/products', productRoutes);
 
 /**
  * Authentication Routes
- * Handles user authentication and profile management
  * 
- * Endpoints:
- * - POST   /api/auth/login              → User login
- * - GET    /api/auth/profile            → Get user profile
- * - PUT    /api/auth/profile            → Update profile
- * - POST   /api/auth/verify-pharmacist-admin → Verify role for sensitive operations
+ * Manages user authentication, profile management, and security features:
+ * - User registration and login
+ * - Profile retrieval and updates
+ * - First-time login OTP verification (email-based)
+ * - Device trust management (httpOnly cookies)
+ * - Role verification for sensitive operations (pharmacist/admin authorization)
+ * 
+ * Uses JWT tokens for authentication and Supabase Auth for user management.
  */
 app.use('/api/auth', authRoutes);
 
 /**
  * Transaction Routes
- * Handles sales transactions and history
  * 
- * Endpoints:
- * - POST   /api/transactions            → Create new transaction (sale)
- * - GET    /api/transactions            → Get transaction history (paginated)
- * - GET    /api/transactions/:id        → Get single transaction details
+ * Handles sales transactions (point-of-sale operations):
+ * - Creating new transactions (processing sales)
+ * - Calculating totals with VAT and Senior/PWD discounts
+ * - Updating inventory stock using FIFO method
+ * - Retrieving transaction history with pagination
+ * - Viewing individual transaction details
+ * 
+ * Transactions are the core business records, linking products, quantities,
+ * prices, discounts, and payment methods into a complete sale record.
  */
 app.use('/api/transactions', transactionRoutes);
 
 /**
- * Inventory Routes
- * Handles inventory management and stock operations
+ * Inventory Management Routes
  * 
- * Endpoints:
- * - GET    /api/inventory/items         → Get all product items
- * - GET    /api/inventory/items/:id      → Get items for specific product
+ * Manages product stock at the batch level (Product_Item records):
+ * - Viewing all stock items with expiry dates
+ * - Getting stock for specific products
+ * - Adding new stock batches
+ * - Updating stock quantities
+ * - Deleting stock items
+ * 
+ * Inventory is separate from products because one product can have multiple
+ * batches with different expiry dates, requiring FIFO (First In, First Out)
+ * stock management for proper inventory control.
  */
 app.use('/api/inventory', inventoryRoutes);
 
 /**
  * Health Check Endpoint
  * 
- * PURPOSE: Verify server is running and responding
+ * A simple endpoint that confirms the server is running and responding to requests.
+ * Used by deployment platforms (Railway, Heroku, etc.) and load balancers to
+ * determine if the server is healthy and should receive traffic.
  * 
- * Used for:
- * - Deployment monitoring
- * - Load balancer health checks
- * - Debugging connection issues
+ * Returns a minimal JSON response with status and timestamp. The timestamp helps
+ * verify the server is processing requests in real-time, not just returning cached
+ * responses.
  * 
- * Returns: Simple JSON with status and timestamp
+ * This endpoint should be lightweight and fast, as it may be called frequently
+ * by monitoring systems.
  */
 app.get('/api/health', (req, res) => {
     res.json({
         message: 'API is running',
         status: 'healthy',
-        timestamp: new Date().toISOString(),  // Current server time
+        timestamp: new Date().toISOString(),
     });
 });
 
 /**
  * Database Connection Test Endpoint
  * 
- * PURPOSE: Test Supabase database connection and credentials
+ * Diagnostic endpoint for troubleshooting database connectivity issues during
+ * deployment or development. Performs two critical tests:
  * 
- * USAGE: GET /api/test-db
+ * TEST 1: Database Query Test
+ * - Attempts to query the Product table
+ * - Verifies: Database is accessible, credentials are valid, tables exist
+ * - If this fails, the database connection is completely broken
  * 
- * Tests performed:
- * 1. Database connection - Queries Product table
- * 2. Authentication service - Tests service role key (admin access)
+ * TEST 2: Authentication Service Test
+ * - Attempts to use Supabase Auth admin API (requires service role key)
+ * - Verifies: Service role key is valid, can perform admin operations
+ * - If this fails but Test 1 passes, it means you're using anon key instead
+ *   of service role key (which is fine for basic operations but limits functionality)
  * 
- * Returns diagnostic information about database connectivity
- * Useful for troubleshooting deployment issues
+ * Returns detailed diagnostic information including which tests passed/failed
+ * and helpful error messages to guide troubleshooting. This is especially useful
+ * when deploying to new environments where credentials might be misconfigured.
  */
 app.get('/api/test-db', async (req, res) => {
     try {
@@ -226,28 +268,41 @@ app.get('/api/test-db', async (req, res) => {
         /**
          * Test 1: Basic Database Connection
          * 
-         * Queries the Product table to verify:
-         * - Database is accessible
-         * - Connection credentials are valid
-         * - Tables exist and are queryable
+         * Queries a single product to verify the database connection works.
+         * This is the most fundamental test - if this fails, nothing else will work.
+         * We limit to 1 row to minimize data transfer and response time.
          */
         const {data, error} = await supabase.from('Product').select('*').limit(1);
         if (error) {
-            throw error;  // If query fails, database connection is broken
+            throw error;
         }
         
         /**
          * Test 2: Authentication Service Access
          * 
-         * Tests Supabase Auth admin API to verify:
-         * - Service role key is valid (allows admin operations)
-         * - Can access user management features
+         * Tests the Supabase Auth admin API, which requires the service role key.
+         * This key has elevated permissions and is needed for operations like:
+         * - Creating users programmatically
+         * - Updating user metadata
+         * - Managing user sessions
          * 
-         * Note: This requires SUPABASE_SERVICE_ROLE_KEY (not anon key)
+         * If this fails, it's usually because:
+         * - Using anon key instead of service role key (common mistake)
+         * - Service role key is invalid or expired
+         * - Network issues preventing API access
          */
         const {data: authTest, error: authError} = await supabase.auth.admin.listUsers();
         
-        // Build success response with test results
+        /**
+         * Build Response with Test Results
+         * 
+         * We structure the response to clearly show which tests passed and provide
+         * actionable information. The response includes:
+         * - Overall success status
+         * - Individual test results with status and messages
+         * - Sample data counts to verify queries returned results
+         * - Error details if any test failed
+         */
         const response: any = {
             success: true,
             message: 'Supabase connection successful!',
@@ -256,20 +311,26 @@ app.get('/api/test-db', async (req, res) => {
                 database: {
                     status: 'connected',
                     message: 'Successfully queried Product table',
-                    sampleData: data?.length || 0  // Number of products found
+                    sampleData: data?.length || 0
                 }
             }
         };
         
-        // Add auth test results if available
+        /**
+         * Add Authentication Test Results
+         * 
+         * If auth test succeeds, we include user count to verify admin access works.
+         * If it fails, we mark it as a warning (not an error) because some deployments
+         * might intentionally use anon key for security reasons, though this limits
+         * functionality for user management operations.
+         */
         if (!authError) {
             response.tests.auth = {
                 status: 'connected',
                 message: 'Service role key is valid',
-                userCount: authTest?.users?.length || 0  // Number of users in system
+                userCount: authTest?.users?.length || 0
             };
         } else {
-            // Auth test failed (normal if using anon key instead of service role key)
             response.tests.auth = {
                 status: 'warning',
                 message: 'Could not test auth (this is normal if using anon key)',
@@ -279,14 +340,23 @@ app.get('/api/test-db', async (req, res) => {
         
         res.json(response);
     } catch (error: any) {
-        // Handle any errors during testing
+        /**
+         * Error Handling
+         * 
+         * If any test fails, we return a detailed error response with:
+         * - Error message from Supabase
+         * - Helpful hints based on error type (e.g., "Invalid API key" suggests
+         *   checking environment variables)
+         * - Full error details for debugging
+         * 
+         * This helps developers quickly identify and fix configuration issues.
+         */
         console.error('Supabase connection test failed:', error);
         res.status(500).json({
             success: false,
             message: 'Supabase connection failed',
             error: error.message || 'Unknown error',
             details: error.details || null,
-            // Provide helpful hint based on error type
             hint: error.message?.includes('Invalid API key') 
                 ? 'Check your SUPABASE_SERVICE_ROLE_KEY in .env file'
                 : 'Verify your Supabase credentials and network connection'
@@ -300,11 +370,16 @@ app.get('/api/test-db', async (req, res) => {
  * SERVER STARTUP
  * ============================================================================
  * 
- * Starts the HTTP server and begins listening for incoming requests
+ * Starts the HTTP server and begins listening for incoming requests on the
+ * specified port. Once this function executes, the server is live and ready
+ * to handle API requests from clients.
  * 
- * PORT: Uses environment variable or defaults to 5002
+ * The callback function runs after the server successfully starts, confirming
+ * the port is available and the server is bound to it. We log the server URL
+ * and health check endpoint for easy reference during development.
  * 
- * Once this runs, the server is live and can accept HTTP requests
+ * In production, deployment platforms (Railway, Heroku, etc.) automatically
+ * set the PORT environment variable, so the server adapts to the assigned port.
  */
 app.listen(PORT, () => {
     console.log(`Server running http:${PORT}`);

@@ -1,48 +1,47 @@
 /**
  * ============================================================================
- * INVENTORY ROUTES - routes/inventory.ts
+ * INVENTORY ROUTES
  * ============================================================================
  * 
- * This file defines all inventory-related API endpoints.
+ * Defines all inventory management API endpoints. Inventory in this system is
+ * managed at the batch level, allowing for proper stock tracking with expiry dates.
  * 
- * ROUTE STRUCTURE:
- * All routes are prefixed with /api/inventory (defined in server.ts)
+ * INVENTORY ARCHITECTURE:
  * 
- * ENDPOINTS:
- * - GET    /api/inventory/items                    → Get all product items
- * - GET    /api/inventory/items/product/:productId → Get items for specific product
- * - GET    /api/inventory/stock/:productId         → Get total stock for product
- * - GET    /api/inventory/products-with-stock      → Get all products with stock summary
- * - POST   /api/inventory/add                      → Add new stock item
- * - PUT    /api/inventory/:id                      → Update stock item
- * - DELETE /api/inventory/:id                      → Delete stock item
+ * Product (Master Record):
+ *   - Contains product information (name, price, category, VAT status)
+ *   - One product can have multiple batches (Product_Item records)
  * 
- * INVENTORY CONCEPT:
- * - Product: Master product record (name, price, category)
- * - Product_Item: Individual stock items (batches with expiry dates)
- * - One Product can have multiple Product_Items (different batches, expiry dates)
- * - Stock is calculated by summing all Product_Item.Stock values for a Product
+ * Product_Item (Batch Records):
+ *   - Represents a specific batch of stock with expiry date
+ *   - Contains: Stock quantity, ExpiryDate, BatchNumber, Location
+ *   - Multiple Product_Items can belong to one Product
+ * 
+ * Stock Calculation:
+ *   Total stock for a product = Sum of all Product_Item.Stock where ProductID matches
+ * 
+ * WHY BATCH-LEVEL TRACKING?
+ * - Enables FIFO (First In, First Out) stock management
+ * - Tracks expiry dates for pharmaceutical products
+ * - Allows batch recalls if needed
+ * - Supports accurate inventory auditing
  * 
  * AUTHENTICATION:
- * Currently, inventory routes don't require authentication (public access)
- * In production, you should add authentication middleware
+ * Currently public, but should be protected in production as inventory management
+ * is a sensitive operation that affects business operations.
  */
 
-// Import Express Router to create route handlers
 import express from 'express';
-
-// Import inventory controller functions
 import {
-    getAllProductItems,              // Get all product items
-    getProductItemsByProductId,      // Get items for specific product
-    getProductStock,                 // Get total stock for product
-    getAllProductsWithStock,         // Get all products with stock summary
-    addStock,                        // Add new stock item
-    updateStock,                     // Update stock item
-    deleteProductItem                // Delete stock item
+    getAllProductItems,
+    getProductItemsByProductId,
+    getProductStock,
+    getAllProductsWithStock,
+    addStock,
+    updateStock,
+    deleteProductItem
 } from '../controllers/InventoryController';
 
-// Create Express router instance
 const router = express.Router();
 
 /**
@@ -51,30 +50,71 @@ const router = express.Router();
  * ============================================================================
  */
 
-// GET /api/inventory/items
-// Get all product items (all batches of all products)
-// Returns: Array of Product_Item records
-// Use case: Inventory management, stock auditing
+/**
+ * Get All Product Items
+ * 
+ * Retrieves all Product_Item records (all batches of all products) from the database.
+ * This provides a complete view of inventory at the batch level, including expiry
+ * dates and batch numbers.
+ * 
+ * USE CASES:
+ * - Complete inventory audit
+ * - Expiry date tracking and alerts
+ * - Batch-level inventory reports
+ * - Stock reconciliation
+ * 
+ * NOTE: This can return a large dataset if there are many products with multiple
+ * batches. Consider adding pagination or filtering if performance becomes an issue.
+ */
 router.get('/items', getAllProductItems);
 
-// GET /api/inventory/items/product/:productId
-// Get all product items for a specific product
-// URL parameter: :productId (ProductID UUID)
-// Returns: Array of Product_Item records for the specified product
-// Use case: View all batches/expiry dates for a product
+/**
+ * Get Product Items by Product ID
+ * 
+ * Retrieves all batches (Product_Item records) for a specific product. This is useful
+ * when you need to see all the different batches, expiry dates, and stock quantities
+ * for a single product.
+ * 
+ * USE CASES:
+ * - Viewing all batches when receiving new stock
+ * - Checking expiry dates for a specific product
+ * - Understanding stock distribution across batches
+ * - Planning stock rotation (FIFO)
+ */
 router.get('/items/product/:productId', getProductItemsByProductId);
 
-// GET /api/inventory/stock/:productId
-// Get total stock quantity for a specific product
-// URL parameter: :productId (ProductID UUID)
-// Returns: { productId, totalStock: number }
-// Calculation: Sum of all Product_Item.Stock where ProductID matches
+/**
+ * Get Total Stock for Product
+ * 
+ * Calculates and returns the total stock quantity for a specific product by summing
+ * all Product_Item.Stock values where ProductID matches. This is a quick way to get
+ * the total available quantity without fetching all batch records.
+ * 
+ * USE CASES:
+ * - Quick stock check before adding to cart
+ * - Low stock alerts
+ * - Product availability display
+ * 
+ * Returns: { productId: string, totalStock: number }
+ */
 router.get('/stock/:productId', getProductStock);
 
-// GET /api/inventory/products-with-stock
-// Get all products with their total stock summary
-// Returns: Array of products with calculated stock field
-// Use case: Inventory overview, low stock alerts
+/**
+ * Get All Products with Stock Summary
+ * 
+ * Retrieves all products along with their calculated total stock. This combines Product
+ * records with aggregated stock data, providing a complete inventory overview in a
+ * single query.
+ * 
+ * USE CASES:
+ * - Inventory dashboard
+ * - Low stock reports
+ * - Product availability overview
+ * - Stock level monitoring
+ * 
+ * The stock is calculated server-side by aggregating Product_Item records, ensuring
+ * accuracy and reducing frontend computation.
+ */
 router.get('/products-with-stock', getAllProductsWithStock);
 
 /**
@@ -83,34 +123,63 @@ router.get('/products-with-stock', getAllProductsWithStock);
  * ============================================================================
  */
 
-// POST /api/inventory/add
-// Add a new stock item (new batch)
-// Request body: {
-//   ProductID: string,
-//   Stock: number,
-//   ExpiryDate: date (optional),
-//   BatchNumber: string (optional),
-//   Location: string (optional, default: 'main_store')
-// }
-// Returns: Created Product_Item record
-// Use case: Receiving new stock, adding new batch
+/**
+ * Add Stock (New Batch)
+ * 
+ * Creates a new Product_Item record, representing a new batch of stock received.
+ * This is used when:
+ * - Receiving new inventory from suppliers
+ * - Adding a new batch with different expiry date
+ * - Restocking products
+ * 
+ * REQUEST BODY:
+ * {
+ *   ProductID: string (UUID of the product),
+ *   Stock: number (quantity received),
+ *   ExpiryDate: date (optional, but recommended for pharmaceuticals),
+ *   BatchNumber: string (optional, supplier batch number),
+ *   Location: string (optional, default: 'main_store')
+ * }
+ * 
+ * When stock is added, it becomes available for sale immediately. The system uses
+ * FIFO (First In, First Out) when selling, so older batches are sold first.
+ */
 router.post('/add', addStock);
 
-// PUT /api/inventory/:id
-// Update an existing stock item
-// URL parameter: :id (ProductItemID UUID)
-// Request body: Object with fields to update (Stock, ExpiryDate, etc.)
-// Returns: Updated Product_Item record
-// Use case: Adjust stock quantity, update expiry date
+/**
+ * Update Stock Item
+ * 
+ * Updates an existing Product_Item record. Commonly used for:
+ * - Adjusting stock quantities (corrections, damaged goods)
+ * - Updating expiry dates (if supplier provides correction)
+ * - Changing batch numbers or locations
+ * 
+ * Supports partial updates - only send the fields you want to change. The ProductItemID
+ * in the URL identifies which batch to update.
+ * 
+ * WARNING: Updating stock quantities directly can affect inventory accuracy. Consider
+ * using transactions or adjustment records to maintain an audit trail.
+ */
 router.put('/:id', updateStock);
 
-// DELETE /api/inventory/:id
-// Delete a stock item
-// URL parameter: :id (ProductItemID UUID)
-// WARNING: This permanently deletes the stock item
-// Consider: Soft delete (IsActive = false) instead
-// Use case: Remove damaged/expired stock
+/**
+ * Delete Stock Item
+ * 
+ * Permanently removes a Product_Item record from the database. This is a hard delete
+ * and cannot be undone.
+ * 
+ * USE CASES:
+ * - Removing expired stock (after disposal)
+ * - Deleting damaged inventory records
+ * - Cleaning up test data
+ * - Correcting data entry errors
+ * 
+ * WARNING: This permanently deletes the stock record. Consider using soft delete
+ * (IsActive = false) instead to maintain an audit trail of all inventory changes.
+ * 
+ * NOTE: Deleting a stock item reduces the total stock for that product, which may
+ * affect product availability in the PoS system.
+ */
 router.delete('/:id', deleteProductItem);
 
-// Export router to be used in server.ts
 export default router;

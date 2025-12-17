@@ -3,17 +3,20 @@
  * PRODUCTS CONTROLLER
  * ============================================================================
  * 
- * This controller handles all product-related operations:
- * - Fetching products (with stock information)
- * - Getting single product details
- * - Creating, updating, and deleting products
+ * Handles all product-related business logic and database operations. Controllers
+ * are the bridge between routes (HTTP layer) and the database (data layer).
  * 
- * CONTROLLER PATTERN:
- * - Receives HTTP request (req) and response (res) objects
- * - Extracts data from request (req.body, req.params)
- * - Queries database using Supabase
- * - Processes/transforms data
- * - Returns JSON response
+ * RESPONSIBILITIES:
+ * - Validate and process product data
+ * - Query database using Supabase
+ * - Calculate stock information from Product_Item records
+ * - Transform data for API responses
+ * - Handle errors and return appropriate HTTP status codes
+ * 
+ * STOCK CALCULATION:
+ * Products don't store stock directly. Stock is calculated by aggregating
+ * Product_Item records (batches) that belong to each product. This allows for
+ * batch-level tracking with expiry dates and FIFO inventory management.
  */
 
 import { supabase } from '../utils/database';
@@ -68,31 +71,46 @@ import { Request, Response } from 'express';
  */
 export const getAllProducts = async (req: Request, res: Response) => {
     try {
-        // Get pagination parameters from query string
+        /**
+         * Parse Pagination Parameters
+         * 
+         * Extracts page and limit from query string. Defaults ensure the endpoint
+         * works even if parameters are not provided. The limit of 40 was chosen
+         * to balance initial load time with the number of products displayed.
+         */
         const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 40; // Reduced from 70 for faster loading
+        const limit = parseInt(req.query.limit as string) || 40;
         const offset = (page - 1) * limit;
         
         console.log(`🚀 Fetching products - page ${page}, limit ${limit}`);
         const startTime = Date.now();
         
         /**
-         * OPTIMIZED TWO-STEP APPROACH WITH PAGINATION
+         * PERFORMANCE OPTIMIZATION: Two-Step Query Approach
          * 
-         * Why this approach?
-         * - Product table: Contains product information (name, price, etc.)
-         * - Product_Item table: Contains individual stock items (each with quantity)
+         * PROBLEM: If we fetch all Product_Items for all products, we could be
+         * querying 10,000+ records even though we only need stock for 40 products.
          * 
-         * OPTIMIZATION: Instead of fetching ALL Product_Items, we:
-         * 1. Fetch products first with pagination (limited to 40 per page)
+         * SOLUTION: Two-step approach
+         * 1. Fetch only the products we need (40 per page)
          * 2. Extract their ProductIDs
-         * 3. Only fetch Product_Items for those specific products
+         * 3. Fetch Product_Items ONLY for those specific products
          * 
-         * This reduces the query from potentially 10,000+ rows to ~100-200 rows per page
-         * Result: Much faster query execution and faster initial page load
+         * RESULT: Reduces query from 10,000+ rows to ~100-200 rows per page,
+         * dramatically improving query performance and page load time.
          */
         
-        // Step 1: Get total count for pagination (fast query)
+        /**
+         * Step 1: Get Total Count for Pagination
+         * 
+         * Uses Supabase's count feature with 'head: true' to get only the count
+         * without fetching actual data. This is much faster than fetching all
+         * records just to count them.
+         * 
+         * If this fails, we continue without total count (pagination still works,
+         * but "total" will be 0). This prevents a count query failure from breaking
+         * the entire endpoint.
+         */
         let total = 0;
         try {
             const { count, error: countError } = await supabase
@@ -109,12 +127,21 @@ export const getAllProducts = async (req: Request, res: Response) => {
             console.warn('⚠️ Error getting total count, continuing without it');
         }
         
-        // Step 2: Get products with pagination
+        /**
+         * Step 2: Fetch Products with Pagination and Timeout Protection
+         * 
+         * Uses Promise.race() to implement a timeout. If the database query takes
+         * longer than 7 seconds, we reject with a timeout error rather than
+         * hanging indefinitely. This prevents the server from becoming unresponsive
+         * during database connectivity issues.
+         * 
+         * The timeout is cleared if the query completes successfully to prevent
+         * memory leaks.
+         */
         let products: any[] = [];
         const productsQueryStart = Date.now();
         
         try {
-            // Create a timeout promise that rejects after 7 seconds
             let timeoutId: NodeJS.Timeout | undefined;
             const productsTimeoutPromise = new Promise<never>((_, reject) => {
                 timeoutId = setTimeout(() => {
@@ -122,25 +149,36 @@ export const getAllProducts = async (req: Request, res: Response) => {
                 }, 7000);
             });
             
-            // Race between the query and timeout
+            /**
+             * Product Query with Pagination
+             * 
+             * Uses .range(offset, offset + limit - 1) for pagination. This is more
+             * efficient than using .limit() and .offset() separately. The query
+             * selects only the fields needed for display to reduce payload size.
+             */
             const queryPromise = supabase
                 .from('Product')
                 .select('ProductID, Name, GenericName, Category, Brand, SellingPrice, IsVATExemptYN, PrescriptionYN, SeniorPWDYN, Image')
                 .eq('IsActive', true)
                 .order('Name', { ascending: true })
-                .range(offset, offset + limit - 1); // Use range for pagination
+                .range(offset, offset + limit - 1);
             
             const productsResult = await Promise.race([
                 queryPromise,
                 productsTimeoutPromise
             ]);
             
-            // Clear timeout if query completed successfully
             if (timeoutId) {
                 clearTimeout(timeoutId);
             }
             
-            // Check if result has error property (Supabase response)
+            /**
+             * Process Query Result
+             * 
+             * Supabase returns an object with { data, error } structure. We check
+             * for errors and extract the data array. TypeScript type checking ensures
+             * we handle the response correctly.
+             */
             if (productsResult && typeof productsResult === 'object' && 'error' in productsResult) {
                 if (productsResult.error) {
                     console.error('❌ Error fetching products:', productsResult.error);
@@ -155,7 +193,19 @@ export const getAllProducts = async (req: Request, res: Response) => {
             const productsQueryTime = Date.now() - productsQueryStart;
             console.log(`✅ Product query completed in ${productsQueryTime}ms`);
         } catch (timeoutError: any) {
-            // Query timed out or failed
+            /**
+             * Query Timeout or Failure Handling
+             * 
+             * If the query times out or fails, we log detailed error information
+             * to help diagnose the issue. Common causes:
+             * - Slow database connection
+             * - Missing database indexes
+             * - Network issues
+             * - Invalid credentials
+             * 
+             * We throw an error to return a 500 status, but include helpful
+             * troubleshooting information in the error message.
+             */
             const productsQueryTime = Date.now() - productsQueryStart;
             console.error(`❌ Product query failed after ${productsQueryTime}ms:`, timeoutError.message);
             console.error('💡 Troubleshooting tips:');
@@ -166,7 +216,13 @@ export const getAllProducts = async (req: Request, res: Response) => {
             throw new Error(`Failed to fetch products: ${timeoutError.message}. Check backend logs for details.`);
         }
         
-        // Early return if no products found
+        /**
+         * Early Return for Empty Results
+         * 
+         * If no products are found, return immediately with empty data and
+         * pagination metadata. This avoids unnecessary stock queries when there
+         * are no products to display.
+         */
         if (products.length === 0) {
             console.log('✅ No products found');
             res.json({
@@ -182,15 +238,29 @@ export const getAllProducts = async (req: Request, res: Response) => {
             return;
         }
         
-        // Step 3: Extract ProductIDs from the products we fetched
+        /**
+         * Step 3: Extract Product IDs for Stock Query
+         * 
+         * Creates an array of ProductIDs from the products we fetched. This array
+         * is used in the next step to query only the relevant Product_Item records.
+         */
         const productIDs = products.map(p => p.ProductID);
         
-        // Step 4: Only fetch Product_Items for the products we're returning
+        /**
+         * Step 4: Fetch Stock Data (Product_Items) with Timeout Protection
+         * 
+         * Queries Product_Item table for only the products we're returning. This
+         * is the key optimization - instead of fetching all Product_Items, we use
+         * .in('ProductID', productIDs) to fetch only what we need.
+         * 
+         * If this query fails or times out, we continue with products that have
+         * 0 stock rather than failing the entire request. This graceful degradation
+         * ensures the PoS system remains usable even if stock queries are slow.
+         */
         let productItems: any[] = [];
         const itemsQueryStart = Date.now();
         
         try {
-            // Create a timeout promise that rejects after 5 seconds
             let timeoutId: NodeJS.Timeout | undefined;
             const timeoutPromise = new Promise<never>((_, reject) => {
                 timeoutId = setTimeout(() => {
@@ -198,7 +268,6 @@ export const getAllProducts = async (req: Request, res: Response) => {
                 }, 5000);
             });
             
-            // Race between the query and timeout
             const queryPromise = supabase
                 .from('Product_Item')
                 .select('ProductID, Stock')
@@ -210,16 +279,13 @@ export const getAllProducts = async (req: Request, res: Response) => {
                 timeoutPromise
             ]);
             
-            // Clear timeout if query completed successfully
             if (timeoutId) {
                 clearTimeout(timeoutId);
             }
             
-            // Check if result has error property (Supabase response)
             if (itemsResult && typeof itemsResult === 'object' && 'error' in itemsResult) {
                 if (itemsResult.error) {
                     console.error('❌ Error fetching product items:', itemsResult.error);
-                    // Don't throw - we can still return products (they'll just have 0 stock)
                 } else {
                     productItems = (itemsResult as any).data || [];
                 }
@@ -230,7 +296,13 @@ export const getAllProducts = async (req: Request, res: Response) => {
             const itemsQueryTime = Date.now() - itemsQueryStart;
             console.log(`✅ Product_Items query completed in ${itemsQueryTime}ms`);
         } catch (timeoutError: any) {
-            // Query timed out or failed - return products without stock (better than failing completely)
+            /**
+             * Graceful Degradation
+             * 
+             * If stock query fails, we continue with products showing 0 stock
+             * rather than failing the entire request. This ensures the PoS system
+             * remains functional even during database performance issues.
+             */
             const itemsQueryTime = Date.now() - itemsQueryStart;
             console.warn(`⚠️ Product_Items query timed out after ${itemsQueryTime}ms, returning products with 0 stock:`, timeoutError.message);
             productItems = [];
@@ -239,7 +311,19 @@ export const getAllProducts = async (req: Request, res: Response) => {
         console.log(`✅ Got ${products.length} products and ${productItems.length} items (optimized query)`);
 
         /**
-         * CALCULATE STOCK PER PRODUCT
+         * Calculate Stock Per Product
+         * 
+         * Uses a Map to efficiently aggregate stock quantities. For each Product_Item,
+         * we add its Stock value to the running total for that ProductID. This is
+         * more efficient than using array methods like reduce() for each product.
+         * 
+         * EXAMPLE:
+         * Product_Items: [
+         *   { ProductID: "abc", Stock: 50 },
+         *   { ProductID: "abc", Stock: 30 },
+         *   { ProductID: "xyz", Stock: 100 }
+         * ]
+         * Result: Map { "abc" => 80, "xyz" => 100 }
          */
         const stockMap = new Map<string, number>();
         productItems.forEach(item => {
@@ -248,22 +332,30 @@ export const getAllProducts = async (req: Request, res: Response) => {
         });
 
         /**
-         * COMBINE PRODUCT DATA WITH STOCK
+         * Combine Product Data with Stock Information
+         * 
+         * Merges product data with calculated stock. Products without any Product_Items
+         * will have stock: 0. The spread operator (...) copies all product properties
+         * and adds the stock field.
          */
         const result = products.map(p => ({
             ...p,
             stock: stockMap.get(p.ProductID) || 0
         }));
 
-        // Calculate pagination metadata
+        /**
+         * Calculate Pagination Metadata
+         * 
+         * Computes pagination information needed by the frontend to display page
+         * numbers and "load more" buttons. hasMore indicates if there are additional
+         * pages beyond the current one.
+         */
         const totalPages = Math.ceil(total / limit);
         const hasMore = page < totalPages;
 
-        // Log performance metrics
         const totalTime = Date.now() - startTime;
         console.log(`✅ Total time: ${totalTime}ms, returning ${result.length} products (page ${page}/${totalPages})`);
         
-        // Return success response with products array and pagination metadata
         res.json({
             data: result,
             pagination: {
@@ -288,46 +380,39 @@ export const getAllProducts = async (req: Request, res: Response) => {
 }
 
 /**
- * SEARCH PRODUCTS
+ * Search Products
  * 
- * Endpoint: GET /api/products/search?q=searchterm&limit=50
+ * Searches products across Name, GenericName, and Brand fields using case-insensitive
+ * pattern matching. This endpoint searches the entire database, not just loaded products,
+ * making it useful for finding products that aren't currently displayed.
  * 
- * PURPOSE: Search all products in the database (not just loaded ones)
+ * SEARCH BEHAVIOR:
+ * - Searches in multiple fields simultaneously (Name, GenericName, Brand)
+ * - Case-insensitive matching (finds "paracetamol" even if stored as "Paracetamol")
+ * - Partial matching (finds "para" in "Paracetamol")
+ * - Minimum 2 characters required (prevents overly broad searches)
  * 
- * QUERY PARAMETERS:
- * - q: Search term (required, minimum 2 characters)
- * - limit: Maximum results (default: 50)
+ * PERFORMANCE:
+ * Uses database indexes for fast searching. The search is performed server-side,
+ * reducing the amount of data transferred and allowing for efficient database queries.
  * 
- * FLOW:
- * 1. Validate search term (minimum 2 characters)
- * 2. Search Product table in Name, GenericName, and Brand fields
- * 3. Extract ProductIDs from search results
- * 4. Query Product_Item table for stock information
- * 5. Calculate total stock per product
- * 6. Return search results with stock
- * 
- * RETURNS: Object with search results
- * {
- *   data: [
- *     {
- *       ProductID: "...",
- *       Name: "Paracetamol",
- *       stock: 150
- *     },
- *     ...
- *   ],
- *   pagination: {
- *     total: 25,
- *     limit: 50
- *   }
- * }
+ * Returns products with calculated stock information, sorted alphabetically by name.
  */
 export const searchProducts = async (req: Request, res: Response) => {
     try {
+        /**
+         * Parse and Validate Search Parameters
+         * 
+         * Extracts search term and limit from query string. The minimum 2-character
+         * requirement prevents searches that would return too many results (like
+         * searching for "a" which might match hundreds of products).
+         * 
+         * If search term is too short, returns empty results immediately without
+         * making a database query.
+         */
         const searchTerm = (req.query.q as string) || '';
         const limit = parseInt(req.query.limit as string) || 50;
         
-        // Validate search term
         if (!searchTerm || searchTerm.trim().length < 2) {
             return res.json({
                 data: [],
@@ -449,49 +534,53 @@ export const searchProducts = async (req: Request, res: Response) => {
 }
 
 /**
- * GET PRODUCT BY ID
+ * Get Product by ID
  * 
- * Endpoint: GET /api/products/:id
+ * Retrieves a single product by its unique ProductID (UUID). Used when viewing
+ * product details or editing a specific product.
  * 
- * PURPOSE: Fetch a single product by its unique ID
+ * ERROR HANDLING:
+ * - If product not found: Returns 404 Not Found
+ * - If database error: Returns 500 Internal Server Error
  * 
- * FLOW:
- * 1. Extract product ID from URL parameter (req.params.id)
- * 2. Query Product table for product with matching ID
- * 3. Check if product exists
- * 4. Return product data or 404 error
- * 
- * RETURNS: Single product object or 404 error
+ * Returns the complete product record with all fields. Stock information is not
+ * included - use the inventory endpoints if stock is needed.
  */
 export const getProductById = async (req: Request, res: Response) => {
     try {
-        // Extract product ID from URL parameter
-        // Example: GET /api/products/123 → id = "123"
         const id = req.params.id;
         
-        // Query database for product with matching ID
+        /**
+         * Query Product by ID
+         * 
+         * Uses .eq() to find the product with matching ProductID. Supabase returns
+         * an array even for single results, so we check if the array is empty to
+         * determine if the product was found.
+         */
         const { data, error } = await supabase
             .from('Product')
-            .select('*')  // Get all columns
-            .eq('ProductID', id);  // Where ProductID equals the provided id
+            .select('*')
+            .eq('ProductID', id);
         
-        // Check for database errors
         if (error) {
             console.error('Supabase error fetching product:', error);
             throw error;
         }
         
-        // Check if product was found
-        // data is an array, so check if it's empty
         if (!data || data.length === 0) {
-            // Return 404 Not Found error
             return res.status(404).json({
                 success: false,
                 message: 'Product not found'
             });
         }
         
-        // Return the first (and only) product from results
+        /**
+         * Return Single Product
+         * 
+         * Returns data[0] because Supabase always returns an array, even for
+         * single-record queries. Since we're querying by unique ID, there should
+         * only be one result (or zero if not found).
+         */
         res.json(data[0]);
     } catch (error: any) {
         // Handle any errors
@@ -507,29 +596,34 @@ export const getProductById = async (req: Request, res: Response) => {
 
 
 /**
- * CREATE PRODUCT
+ * Create Product
  * 
- * Endpoint: POST /api/products
+ * Creates a new product record in the Product table. The request body should contain
+ * all required product fields as defined by the database schema.
  * 
- * PURPOSE: Add a new product to the database
+ * NOTE: This creates the product master record only. Stock must be added separately
+ * via the inventory endpoints, as products and stock items are stored in separate
+ * tables (Product and Product_Item).
  * 
- * FLOW:
- * 1. Extract product data from request body (req.body)
- * 2. Insert new product into Product table
- * 3. Return created product data
- * 
- * REQUEST BODY: Product object with fields like Name, SellingPrice, Category, etc.
+ * VALIDATION:
+ * Database constraints will enforce required fields and data types. If validation
+ * fails, Supabase returns an error that is passed through to the client.
  */
 export const createProduct = async (req: Request, res: Response) => {
     try {
-        // Insert product data from request body into Product table
-        // req.body contains the JSON data sent from frontend
+        /**
+         * Insert Product Record
+         * 
+         * Inserts the product data directly into the Product table. Supabase
+         * automatically handles UUID generation for ProductID and timestamps for
+         * CreatedAt/UpdatedAt fields.
+         */
         const {data, error} = await supabase.from('Product').insert(req.body);
         
-        if (error) throw error;  // If insert fails, throw error
+        if (error) throw error;
         
         console.log('Product created:',data);
-        res.json(data);  // Return created product
+        res.json(data);
     } catch (error) {
         console.log('Error:',error);
         res.status(500).json({message: 'Internal Server Error'});
@@ -537,66 +631,73 @@ export const createProduct = async (req: Request, res: Response) => {
 }
 
 /**
- * UPDATE PRODUCT
+ * Update Product
  * 
- * Endpoint: PUT /api/products/:id
+ * Updates an existing product record. Supports partial updates - you only need to
+ * send the fields you want to change. The ProductID in the URL identifies which
+ * product to update.
  * 
- * PURPOSE: Update an existing product's information
+ * PARTIAL UPDATE SUPPORT:
+ * Only the fields included in req.body will be updated. Other fields remain unchanged.
+ * This allows for efficient updates when only changing specific properties (e.g.,
+ * just the price, or just the category).
  * 
- * FLOW:
- * 1. Extract product ID from URL parameter
- * 2. Extract update data from request body
- * 3. Update product in database where ProductID matches
- * 4. Return updated product data
- * 
- * REQUEST BODY: Object with fields to update (only send fields that changed)
+ * The database automatically updates the UpdatedAt timestamp when a record is modified.
  */
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    // Get product ID from URL
     const id = req.params.id;
     
-    // Update product where ProductID matches
-    // req.body contains only the fields to update
+    /**
+     * Update Product Record
+     * 
+     * Uses .update() with .eq() to update only the product with matching ProductID.
+     * Supabase returns the updated record(s), which we send back to the client.
+     */
     const {data, error} = await supabase
         .from('Product')
-        .update(req.body)  // Update with new values
-        .eq('ProductID', id);  // Where ProductID equals id
+        .update(req.body)
+        .eq('ProductID', id);
     
     if (error) throw error;
-    res.json(data);  // Return updated product
+    res.json(data);
   } catch (error) {
     res.status(500).json({message: "Internal Server Error"});
   }
 } 
 
 /**
- * DELETE PRODUCT
+ * Delete Product
  * 
- * Endpoint: DELETE /api/products/:id
+ * Permanently removes a product from the database. This is a hard delete - the
+ * product record is completely removed and cannot be recovered.
  * 
- * PURPOSE: Remove a product from the database
+ * WARNING: This does not delete associated Product_Item records (stock items).
+ * Those should be handled separately. Also, this does not check if the product
+ * has been used in transactions - consider adding validation to prevent deleting
+ * products with transaction history.
  * 
- * FLOW:
- * 1. Extract product ID from URL parameter
- * 2. Delete product from database where ProductID matches
- * 3. Return confirmation
- * 
- * NOTE: This permanently deletes the product. Consider soft delete (IsActive=false) instead.
+ * RECOMMENDATION: Consider implementing soft delete (setting IsActive = false)
+ * instead of hard delete. This preserves data for audit purposes and allows
+ * recovery if a product is accidentally deleted.
  */
 export const deleteProduct = async (req: Request, res: Response) => {
     try {
-        // Get product ID from URL
         const id = req.params.id;
         
-        // Delete product from database
+        /**
+         * Delete Product Record
+         * 
+         * Permanently removes the product from the database. Supabase returns
+         * the deleted record(s) in the response, which we pass through to the client.
+         */
         const {data, error} = await supabase
             .from('Product')
-            .delete()  // Delete operation
-            .eq('ProductID', id);  // Where ProductID equals id
+            .delete()
+            .eq('ProductID', id);
         
         if (error) throw error;
-        res.json(data);  // Return deleted product data
+        res.json(data);
     } catch (error) {
         res.status(500).json({message: "Internal Server Error"});
     }
