@@ -67,7 +67,8 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   
   // Product and cart state management
-  const [products, setProducts] = useState<Product[]>([]);           // All products from API
+  const [products, setProducts] = useState<Product[]>([]);           // All loaded products from API
+  const [allProducts, setAllProducts] = useState<Product[]>([]);     // All products accumulated across pages
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]); // Filtered products for display
   const [cartItems, setCartItems] = useState<CartItem[]>([]);        // Shopping cart items
   const [loading, setLoading] = useState(true);                     // Loading state
@@ -81,6 +82,12 @@ const DashboardPage = () => {
   const [itemsPerPage] = useState<number>(14);                     // Items per page
   const [availableCategories, setAvailableCategories] = useState<string[]>([]); // Available categories from products
   
+  // Pagination state
+  const [productsPage, setProductsPage] = useState<number>(1);       // Current page for product fetching
+  const [hasMoreProducts, setHasMoreProducts] = useState<boolean>(true); // Whether more products are available
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false); // Loading more products state
+  const [isSearching, setIsSearching] = useState<boolean>(false);    // Search in progress state
+  
   // Payment processing state
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(''); // Payment method
   const [referenceNumber, setReferenceNumber] = useState<string>(''); // Payment reference
@@ -93,6 +100,15 @@ const DashboardPage = () => {
   const [showSeniorPWDModal, setShowSeniorPWDModal] = useState(false); // Senior/PWD ID modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);  // Confirmation modal state
   const [showClearCartModal, setShowClearCartModal] = useState(false);  // Clear cart modal state
+  
+  // Quantity input modal state
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [selectedProductForQuantity, setSelectedProductForQuantity] = useState<Product | null>(null);
+  const [quantityInput, setQuantityInput] = useState<string>('1');
+  
+  // Product selection modal state (for multiple matches)
+  const [showProductSelectionModal, setShowProductSelectionModal] = useState(false);
+  const [matchingProducts, setMatchingProducts] = useState<Product[]>([]);
   
   // Receipt state
   const [showReceipt, setShowReceipt] = useState(false);
@@ -146,26 +162,48 @@ const DashboardPage = () => {
   // Fetch products from backend API - can be called on mount or after transactions
   const [isFetching, setIsFetching] = useState(false); // Prevent duplicate calls
   
-  const fetchProducts = useCallback(async (showLoading = true) => {
+  // Fetch products with pagination support
+  const fetchProducts = useCallback(async (page: number = 1, append: boolean = false, showLoading: boolean = true) => {
       // Prevent duplicate simultaneous calls
-      if (isFetching) {
+      if (isFetching && !append) {
         console.log('⚠️ Fetch already in progress, skipping duplicate call');
         return;
       }
       
       try {
-      setIsFetching(true);
-      if (showLoading) {
-        setLoading(true);
-      }
-        // Products endpoint now includes stock in a single call
-        const response = await api.get('/products');
+        setIsFetching(true);
+        if (showLoading && !append) {
+          setLoading(true);
+        } else if (append) {
+          setIsLoadingMore(true);
+        }
         
-        setProducts(response.data);
+        // Products endpoint now supports pagination
+        const response = await api.get(`/products?page=${page}&limit=40`);
         
-        // Extract unique categories from products
+        const responseData = response.data.data || [];
+        const pagination = response.data.pagination || {};
+        
+        if (append) {
+          // Append new products to existing ones
+          setAllProducts(prev => {
+            const combined = [...prev, ...responseData];
+            setProducts(combined);
+            return combined;
+          });
+        } else {
+          // Replace products (initial load or refresh)
+          setAllProducts(responseData);
+          setProducts(responseData);
+        }
+        
+        setHasMoreProducts(pagination.hasMore || false);
+        setProductsPage(page);
+        
+        // Extract unique categories from all loaded products
+        const allLoadedProducts = append ? [...allProducts, ...responseData] : responseData;
         const uniqueCategories = Array.from(
-          new Set(response.data.map((p: Product) => p.Category).filter(Boolean))
+          new Set(allLoadedProducts.map((p: Product) => p.Category).filter(Boolean))
         ).sort() as string[];
         setAvailableCategories(uniqueCategories);
         
@@ -180,35 +218,88 @@ const DashboardPage = () => {
         } else {
           setError('Failed to load products');
         }
-        // Keep products array empty if API fails
-        setProducts([]);
-        setAvailableCategories([]);
+        // Keep products array empty if API fails (only on initial load)
+        if (!append) {
+          setProducts([]);
+          setAllProducts([]);
+          setAvailableCategories([]);
+        }
       } finally {
-      if (showLoading) {
-        setLoading(false);
+        if (showLoading && !append) {
+          setLoading(false);
+        }
+        setIsFetching(false);
+        setIsLoadingMore(false);
       }
-      setIsFetching(false);
+    }, [isFetching, allProducts]);
+  
+  // Search products across all products in database
+  const searchProducts = useCallback(async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.trim().length < 2) {
+      // If search is cleared, reload initial products
+      setProducts(allProducts);
+      setIsSearching(false);
+      return;
     }
-  }, [isFetching]);
+    
+    try {
+      setIsSearching(true);
+      setLoading(true);
+      
+      const response = await api.get(`/products/search?q=${encodeURIComponent(searchTerm.trim())}&limit=100`);
+      
+      const searchResults = response.data.data || [];
+      setProducts(searchResults);
+      setError('');
+    } catch (err: any) {
+      console.error('Error searching products:', err);
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError('Search timeout. Please try again.');
+      } else {
+        setError('Search failed. Please try again.');
+      }
+      setProducts([]);
+    } finally {
+      setLoading(false);
+      setIsSearching(false);
+    }
+  }, [allProducts]);
+  
+  // Load more products (pagination)
+  const loadMoreProducts = useCallback(() => {
+    if (!isLoadingMore && hasMoreProducts && !isSearching) {
+      fetchProducts(productsPage + 1, true, false);
+    }
+  }, [isLoadingMore, hasMoreProducts, isSearching, productsPage, fetchProducts]);
 
   // Fetch products on component mount
   useEffect(() => {
-    fetchProducts(true);
+    fetchProducts(1, false, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only fetch on mount, refresh after transactions is handled separately
 
-  // Filter and sort products based on search, category, and filter criteria
+  // Handle search - use backend search when search term is 2+ characters
+  useEffect(() => {
+    if (searchTerm.trim().length >= 2) {
+      // Debounce search to avoid too many API calls
+      const timeoutId = setTimeout(() => {
+        searchProducts(searchTerm);
+      }, 300); // 300ms debounce
+      
+      return () => clearTimeout(timeoutId);
+    } else if (searchTerm.trim().length === 0) {
+      // Reset to all loaded products when search is cleared
+      setProducts(allProducts);
+      setIsSearching(false);
+    }
+  }, [searchTerm, searchProducts, allProducts]);
+
+  // Filter and sort products based on category and filter criteria (client-side)
+  // Note: Text search is now handled by backend search endpoint
   useEffect(() => {
     let filtered = [...products];
 
-    // Text search filter - searches name, generic name, and brand
-    if (searchTerm.trim()) {
-      filtered = filtered.filter(product =>
-        product.Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.GenericName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.Brand.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
+    // Category filter - case-insensitive match with selected category
 
     // Category filter - case-insensitive match with selected category
     if (selectedCategory) {
@@ -295,7 +386,7 @@ const DashboardPage = () => {
   };
 
   // Add product to shopping cart - increments quantity if already exists
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantity: number = 1) => {
     const availableStock = product.stock || 0;
     
     // Check if product has stock
@@ -304,36 +395,51 @@ const DashboardPage = () => {
       return;
     }
     
+    // Validate quantity
+    if (quantity <= 0) {
+      toast.error('Quantity must be greater than 0');
+      return;
+    }
+    
+    if (quantity > availableStock) {
+      toast.error(`Cannot add ${quantity}. Only ${availableStock} available in stock.`);
+      return;
+    }
+    
     const existingItem = cartItems.find(item => item.name === product.Name);
     
     if (existingItem) {
-      // Check if we can increment quantity
-      if (existingItem.quantity >= availableStock) {
-        toast.error(`Cannot add more. Only ${availableStock} available in stock.`);
+      // Check if we can add the requested quantity
+      const newTotalQuantity = existingItem.quantity + quantity;
+      if (newTotalQuantity > availableStock) {
+        toast.error(`Cannot add ${quantity} more. Only ${availableStock} total available (${existingItem.quantity} already in cart).`);
         return;
       }
-      // Increment quantity if item already in cart
+      // Add to existing quantity
       setCartItems(prev => 
         prev.map(item => 
           item.name === product.Name 
-            ? { ...item, quantity: item.quantity + 1 }
+            ? { ...item, quantity: item.quantity + quantity }
             : item
         )
       );
+      toast.success(`Added ${quantity} ${product.Name} to cart`);
     } else {
-      // Add new item to cart
+      // Add new item to cart with specified quantity
       const newItem: CartItem = {
         id: product.ProductID,
         name: product.Name,
         description: product.GenericName || product.Name,
         price: product.SellingPrice,
-        quantity: 1,
+        quantity: quantity,
         stock: availableStock,
         image: product.Image,
         seniorPWDYN: product.SeniorPWDYN,
         isVATExemptYN: product.IsVATExemptYN
       };
+      
       setCartItems(prev => [...prev, newItem]);
+      toast.success(`Added ${quantity} ${product.Name} to cart`);
     }
   };
 
@@ -365,6 +471,161 @@ const DashboardPage = () => {
   const removeItem = (id: string) => {
     setCartItems(prev => prev.filter(item => item.id !== id));
     toast.success('Item removed from cart');
+  };
+
+  // Show quantity modal for a product (reusable function)
+  const showQuantityModalForProduct = (product: Product) => {
+    // Check stock
+    if (product.stock <= 0) {
+      toast.error(`${product.Name} is out of stock.`);
+      return;
+    }
+    
+    // Show quantity modal
+    setSelectedProductForQuantity(product);
+    setQuantityInput('1');
+    setShowQuantityModal(true);
+  };
+
+  // Handle Enter key in search - find ALL matching products and show selection if multiple
+  const handleSearchEnter = () => {
+    // Validate search term
+    const trimmedSearch = searchTerm.trim();
+    if (trimmedSearch.length < 2) {
+      toast.error('Please enter at least 2 characters to search.');
+      return;
+    }
+    
+    // Limit search term length to prevent performance issues
+    if (trimmedSearch.length > 100) {
+      toast.error('Search term is too long. Please use a shorter search term.');
+      return;
+    }
+    
+    // Find all products from current search results or all products
+    const searchResults = products.length > 0 ? products : allProducts;
+    
+    if (searchResults.length === 0) {
+      toast.error('No products found. Please try a different search term.');
+      return;
+    }
+    
+    let matchingProductsList: Product[] = [];
+    
+    try {
+      // Find ALL products that match search term
+      const searchLower = trimmedSearch.toLowerCase();
+      matchingProductsList = searchResults.filter(product => 
+        product.Name?.toLowerCase().includes(searchLower) ||
+        product.GenericName?.toLowerCase().includes(searchLower) ||
+        product.Brand?.toLowerCase().includes(searchLower)
+      );
+    } catch (error) {
+      console.error('Error filtering products:', error);
+      toast.error('An error occurred while searching. Please try again.');
+      return;
+    }
+    
+    if (matchingProductsList.length === 0) {
+      toast.error(`No products found matching "${trimmedSearch}". Please try a different search term.`);
+      return;
+    }
+    
+    // Limit results to prevent performance issues (show max 50 products)
+    const MAX_SELECTION_RESULTS = 50;
+    if (matchingProductsList.length > MAX_SELECTION_RESULTS) {
+      matchingProductsList = matchingProductsList.slice(0, MAX_SELECTION_RESULTS);
+      toast.info(`Found many matches. Showing first ${MAX_SELECTION_RESULTS} results. Please refine your search.`);
+    }
+    
+    // If only one match, show quantity modal directly
+    if (matchingProductsList.length === 1) {
+      showQuantityModalForProduct(matchingProductsList[0]);
+      return;
+    }
+    
+    // If multiple matches, show selection modal
+    setMatchingProducts(matchingProductsList);
+    setShowProductSelectionModal(true);
+  };
+
+  // Handle product selection from modal
+  const handleProductSelect = (product: Product) => {
+    // Validate product before proceeding
+    if (!product || !product.ProductID) {
+      toast.error('Invalid product selected. Please try again.');
+      return;
+    }
+    
+    // Check stock before showing quantity modal
+    if ((product.stock || 0) <= 0) {
+      toast.error(`${product.Name} is out of stock.`);
+      return;
+    }
+    
+    setShowProductSelectionModal(false);
+    setMatchingProducts([]);
+    showQuantityModalForProduct(product);
+  };
+
+  // Handle Escape key to close modals
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showProductSelectionModal) {
+          setShowProductSelectionModal(false);
+          setMatchingProducts([]);
+        }
+        if (showQuantityModal) {
+          setShowQuantityModal(false);
+          setSelectedProductForQuantity(null);
+          setQuantityInput('1');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showProductSelectionModal, showQuantityModal]);
+
+  // Handle quantity modal confirmation
+  const handleQuantityConfirm = () => {
+    if (!selectedProductForQuantity) {
+      toast.error('No product selected. Please try again.');
+      return;
+    }
+    
+    // Validate quantity input
+    if (!quantityInput || quantityInput.trim() === '') {
+      toast.error('Please enter a quantity');
+      return;
+    }
+    
+    const quantity = parseInt(quantityInput);
+    
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('Please enter a valid quantity (must be greater than 0)');
+      return;
+    }
+    
+    const maxStock = selectedProductForQuantity.stock || 0;
+    if (quantity > maxStock) {
+      toast.error(`Cannot add ${quantity}. Only ${maxStock} available in stock.`);
+      return;
+    }
+    
+    // Add to cart
+    try {
+      addToCart(selectedProductForQuantity, quantity);
+      setShowQuantityModal(false);
+      setSelectedProductForQuantity(null);
+      setQuantityInput('1');
+      // Clear search after adding
+      setSearchTerm('');
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      toast.error('Failed to add product to cart. Please try again.');
+    }
   };
 
   // Clear cart without confirmation (used after successful transaction)
@@ -751,6 +1012,12 @@ const DashboardPage = () => {
               placeholder="Search products..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchTerm.trim().length >= 2) {
+                  e.preventDefault();
+                  handleSearchEnter();
+                }
+              }}
               className="w-full sm:w-80 pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <Search className="absolute right-3 top-2.5 w-5 h-5 text-gray-400" />
@@ -934,10 +1201,30 @@ const DashboardPage = () => {
                       sellingPrice={product.SellingPrice}
                       isVATExempt={product.IsVATExemptYN || false}
                       isSeniorPWDEligible={product.SeniorPWDYN || false}
-                      onAdd={() => addToCart(product)}
+                      onAdd={() => showQuantityModalForProduct(product)}
                     />
                   ))
                 )}
+              </div>
+            )}
+
+            {/* Load More Button - Show when not searching and more products available */}
+            {!loading && !isSearching && hasMoreProducts && searchTerm.trim().length < 2 && (
+              <div className="flex justify-center mt-4 mb-8">
+                <button
+                  onClick={loadMoreProducts}
+                  disabled={isLoadingMore}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <div className="loading loading-spinner loading-sm"></div>
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <span>Load More Products</span>
+                  )}
+                </button>
               </div>
             )}
 
@@ -1484,6 +1771,236 @@ const DashboardPage = () => {
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
               >
                 Clear Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Selection Modal - Shows when multiple products match search */}
+      {showProductSelectionModal && matchingProducts.length > 0 && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onClick={(e) => {
+            // Close modal when clicking outside
+            if (e.target === e.currentTarget) {
+              setShowProductSelectionModal(false);
+              setMatchingProducts([]);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="product-selection-title"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 id="product-selection-title" className="text-xl font-semibold text-gray-800">
+                Multiple Products Found ({matchingProducts.length})
+              </h2>
+              <button
+                onClick={() => {
+                  setShowProductSelectionModal(false);
+                  setMatchingProducts([]);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close product selection modal"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content - Scrollable list */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <p className="text-gray-600 mb-4">
+                Multiple products match "{searchTerm}". Please select one:
+              </p>
+              {matchingProducts.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No products to display</p>
+              ) : (
+                <div className="space-y-2" role="list">
+                  {matchingProducts.map((product, index) => (
+                    <button
+                      key={product.ProductID}
+                      onClick={() => handleProductSelect(product)}
+                      disabled={(product.stock || 0) <= 0}
+                      className="w-full p-4 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50 disabled:hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      role="listitem"
+                      aria-label={`Select ${product.Name}, Price: ₱${product.SellingPrice.toFixed(2)}, Stock: ${product.stock || 0}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-800 truncate">{product.Name}</h3>
+                          {product.GenericName && (
+                            <p className="text-sm text-gray-500 mt-1 truncate">{product.GenericName}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 flex-wrap">
+                            {product.Brand && (
+                              <span className="text-xs text-gray-500">Brand: {product.Brand}</span>
+                            )}
+                            {product.Category && (
+                              <span className="text-xs text-gray-500">Category: {product.Category}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4 flex-shrink-0">
+                          <p className="font-semibold text-blue-600">
+                            ₱{product.SellingPrice.toFixed(2)}
+                          </p>
+                          <p className={`text-xs mt-1 font-medium ${
+                            (product.stock || 0) > 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            Stock: {product.stock || 0}
+                          </p>
+                          {(product.stock || 0) <= 0 && (
+                            <p className="text-xs text-red-600 mt-1">Out of Stock</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowProductSelectionModal(false);
+                  setMatchingProducts([]);
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quantity Input Modal */}
+      {showQuantityModal && selectedProductForQuantity && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onClick={(e) => {
+            // Close modal when clicking outside
+            if (e.target === e.currentTarget) {
+              setShowQuantityModal(false);
+              setSelectedProductForQuantity(null);
+              setQuantityInput('1');
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quantity-modal-title"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 id="quantity-modal-title" className="text-xl font-semibold text-gray-800">Add to Cart</h2>
+              <button
+                onClick={() => {
+                  setShowQuantityModal(false);
+                  setSelectedProductForQuantity(null);
+                  setQuantityInput('1');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close quantity modal"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-gray-600 mb-2">Product:</p>
+                <p className="font-semibold text-gray-800">{selectedProductForQuantity.Name}</p>
+                {selectedProductForQuantity.GenericName && (
+                  <p className="text-sm text-gray-500">{selectedProductForQuantity.GenericName}</p>
+                )}
+              </div>
+              
+              <div>
+                <p className="text-gray-600 mb-2">Price:</p>
+                <p className="font-semibold text-blue-600">
+                  ₱{selectedProductForQuantity.SellingPrice.toFixed(2)}
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-gray-600 mb-2">Available Stock:</p>
+                <p className={`font-semibold ${
+                  selectedProductForQuantity.stock && selectedProductForQuantity.stock > 0 
+                    ? 'text-green-600' 
+                    : 'text-red-600'
+                }`}>
+                  {selectedProductForQuantity.stock || 0}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quantity <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedProductForQuantity.stock || 1}
+                  value={quantityInput}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const maxStock = selectedProductForQuantity.stock || 1;
+                    // Allow empty string for user to clear and type
+                    if (value === '' || (parseInt(value) > 0 && parseInt(value) <= maxStock)) {
+                      setQuantityInput(value);
+                    } else if (parseInt(value) > maxStock) {
+                      // Show error if exceeds stock
+                      toast.error(`Maximum quantity is ${maxStock}`);
+                      setQuantityInput(maxStock.toString());
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleQuantityConfirm();
+                    } else if (e.key === 'Escape') {
+                      setShowQuantityModal(false);
+                      setSelectedProductForQuantity(null);
+                      setQuantityInput('1');
+                    }
+                  }}
+                  autoFocus
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
+                  placeholder="Enter quantity"
+                  aria-label="Quantity to add to cart"
+                  aria-describedby="quantity-help"
+                />
+                <p id="quantity-help" className="text-xs text-gray-500 mt-1">
+                  Maximum: {selectedProductForQuantity.stock || 0} units
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowQuantityModal(false);
+                  setSelectedProductForQuantity(null);
+                  setQuantityInput('1');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleQuantityConfirm}
+                disabled={!quantityInput || parseInt(quantityInput) <= 0 || parseInt(quantityInput) > (selectedProductForQuantity.stock || 0)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                Add to Cart
               </button>
             </div>
           </div>
