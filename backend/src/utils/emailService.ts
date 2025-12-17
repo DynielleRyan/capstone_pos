@@ -1,8 +1,46 @@
+/**
+ * ============================================================================
+ * EMAIL SERVICE - SendGrid Integration
+ * ============================================================================
+ * 
+ * This service handles sending emails via SendGrid, primarily used for OTP
+ * (One-Time Password) delivery during first-time login verification.
+ * 
+ * SENDGRID SETUP:
+ * - Requires SENDGRID_API_KEY environment variable
+ * - API key format: SG.xxxxxxxxxxxxx (starts with "SG.")
+ * - Sender email must be verified in SendGrid dashboard
+ * - Free tier: 100 emails/day
+ * 
+ * FALLBACK BEHAVIOR:
+ * If SendGrid is not configured, the OTP is logged to console (development only).
+ * This allows development to continue without email service setup.
+ */
+
 import sgMail from '@sendgrid/mail';
 
-// Initialize SendGrid with API key from environment
+/**
+ * SendGrid API Key Configuration
+ * 
+ * Loads the API key from environment variables. The key is validated to ensure
+ * it's not a placeholder value. SendGrid API keys always start with "SG." which
+ * helps identify valid keys.
+ * 
+ * If the key is missing or invalid, the service will still function but emails
+ * won't be sent (OTP will be logged to console instead).
+ */
 const sendGridApiKey = process.env.SENDGRID_API_KEY;
 
+/**
+ * Initialize SendGrid Client
+ * 
+ * Sets the API key for the SendGrid client. This must be done before sending
+ * any emails. The initialization happens at module load time, so the client
+ * is ready immediately when the service is imported.
+ * 
+ * If initialization fails, the service gracefully degrades to console logging
+ * mode, allowing development to continue without email service.
+ */
 if (sendGridApiKey && sendGridApiKey !== 'SG.your_api_key_here') {
   try {
     sgMail.setApiKey(sendGridApiKey);
@@ -21,24 +59,70 @@ interface SendOTPEmailParams {
 }
 
 /**
- * Send OTP verification email via SendGrid
+ * Send OTP Verification Email
+ * 
+ * Sends a 6-digit OTP code to the user's email address for first-time login
+ * verification. The email includes both HTML and plain text versions for
+ * maximum compatibility across email clients.
+ * 
+ * EMAIL CONTENT:
+ * - Professional HTML template with pharmacy branding
+ * - Large, easy-to-read OTP code (32px font, letter-spacing for clarity)
+ * - Clear expiration notice (10 minutes)
+ * - Security warning if code wasn't requested
+ * 
+ * SECURITY FEATURES:
+ * - OTP expires in 10 minutes (enforced server-side)
+ * - One-time use (cleared after verification)
+ * - Stored in user metadata (not in database, faster access)
+ * 
+ * FALLBACK BEHAVIOR:
+ * If SendGrid is not configured or fails, the OTP is logged to console.
+ * This allows development and testing without email service setup. In production,
+ * this should be properly configured to ensure security.
+ * 
+ * Returns: true if email sent successfully, false otherwise
  */
 export const sendOTPEmail = async ({ to, otp, userName }: SendOTPEmailParams): Promise<boolean> => {
   try {
-    // If SendGrid is not configured, log and return false
+    /**
+     * Validate SendGrid Configuration
+     * 
+     * Checks if SendGrid is properly configured before attempting to send email.
+     * Validates:
+     * 1. API key exists
+     * 2. API key is not placeholder value
+     * 3. API key has correct format (starts with "SG.")
+     * 
+     * If validation fails, logs OTP to console and returns false. This allows
+     * the application to continue functioning in development without email service.
+     */
     if (!sendGridApiKey || sendGridApiKey === 'SG.your_api_key_here' || !sendGridApiKey.startsWith('SG.')) {
       console.warn('⚠️  SendGrid API key not configured or invalid. OTP will be logged to console.');
       console.log(`📧 OTP for ${to}: ${otp}`);
       return false;
     }
     
-    // Check if SendGrid is properly initialized
+    /**
+     * Verify SendGrid Client Initialization
+     * 
+     * Ensures the SendGrid client was properly initialized. If initialization
+     * failed (e.g., invalid API key format), the client might not have the
+     * send method available.
+     */
     if (!sgMail || typeof sgMail.send !== 'function') {
       console.error('❌ SendGrid mail client not properly initialized');
       console.log(`📧 OTP for ${to} (fallback): ${otp}`);
       return false;
     }
 
+    /**
+     * Email Configuration
+     * 
+     * Sets the sender email and pharmacy name from environment variables,
+     * with sensible defaults. The sender email must be verified in SendGrid
+     * dashboard, otherwise emails will be rejected.
+     */
     const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@jambospharmacy.com';
     const pharmacyName = process.env.PHARMACY_NAME || "Jambo's Pharmacy";
 
@@ -109,13 +193,34 @@ export const sendOTPEmail = async ({ to, otp, userName }: SendOTPEmailParams): P
       `
     };
 
+    /**
+     * Send Email via SendGrid
+     * 
+     * Sends the email using SendGrid's API. The message includes both HTML
+     * and plain text versions for maximum email client compatibility.
+     * 
+     * The HTML version provides a professional, branded appearance, while
+     * the text version ensures the OTP is readable even in basic email clients.
+     */
     await sgMail.send(msg);
     console.log(`✅ OTP email sent successfully to ${to}`);
     return true;
   } catch (error: any) {
+    /**
+     * Error Handling and Diagnostics
+     * 
+     * SendGrid errors provide detailed information about what went wrong.
+     * Common issues:
+     * 
+     * 401 Unauthorized: API key is invalid or missing
+     * 403 Forbidden: API key lacks Mail Send permission, or sender email not verified
+     * 400 Bad Request: Invalid email format or missing required fields
+     * 
+     * We log detailed error information to help diagnose configuration issues,
+     * then fall back to console logging so development can continue.
+     */
     console.error('❌ Error sending OTP email via SendGrid:', error);
     
-    // Log detailed error information
     if (error.response) {
       console.error('SendGrid API Error Response:', JSON.stringify(error.response.body, null, 2));
       console.error('SendGrid Error Status:', error.response.status);
@@ -124,21 +229,36 @@ export const sendOTPEmail = async ({ to, otp, userName }: SendOTPEmailParams): P
       console.error('SendGrid Error Message:', error.message);
     }
     
-    // Check for common issues
     if (error.code === 401) {
       console.error('⚠️  SendGrid API Key is invalid or missing');
     } else if (error.code === 403) {
       console.error('⚠️  SendGrid API Key does not have Mail Send permission, or sender email is not verified');
     }
     
-    // Fallback: log OTP to console if email fails
+    /**
+     * Fallback: Console Logging
+     * 
+     * If email sending fails, log the OTP to console. This allows:
+     * - Development to continue without email service
+     * - Testing OTP functionality
+     * - Debugging when email service is misconfigured
+     * 
+     * WARNING: In production, this should never happen. Email service must
+     * be properly configured for security.
+     */
     console.log(`📧 OTP for ${to} (fallback): ${otp}`);
     return false;
   }
 };
 
 /**
- * Check if SendGrid is properly configured
+ * Check Email Service Configuration
+ * 
+ * Utility function to check if SendGrid is properly configured. Used by
+ * controllers to determine if OTP should be returned in API responses
+ * (development mode only when email service is unavailable).
+ * 
+ * Returns: true if SendGrid is configured and ready, false otherwise
  */
 export const isEmailServiceConfigured = (): boolean => {
   return !!sendGridApiKey && sendGridApiKey !== 'SG.your_api_key_here' && sendGridApiKey.startsWith('SG.');

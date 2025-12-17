@@ -1,22 +1,65 @@
+/**
+ * ============================================================================
+ * AUTHENTICATION CONTEXT - Global Auth State Management
+ * ============================================================================
+ * 
+ * Provides global authentication state to the entire application using React
+ * Context. This allows any component to access user information, session data,
+ * and authentication functions without prop drilling.
+ * 
+ * FEATURES:
+ * - Global auth state (user, session, profile)
+ * - Automatic session synchronization with Supabase
+ * - Profile data fetching from backend API
+ * - Sign out functionality
+ * - Loading states for async operations
+ * 
+ * USAGE:
+ *   const { user, profile, signOut } = useAuth();
+ * 
+ * The context is provided at the app root (App.tsx), making auth state
+ * available to all components throughout the application.
+ */
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { auth } from '../services/supabase';
 import api from '../services/api';
 
-// Authentication context interface - defines what auth data is available
+/**
+ * Authentication Context Type
+ * 
+ * Defines the shape of the authentication context. All components using
+ * useAuth() will receive an object matching this interface.
+ */
 interface AuthContextType {
-  user: User | null;                    // Current authenticated user
-  session: Session | null;              // Current session with tokens
-  loading: boolean;                     // Loading state for auth operations
-  profile: any | null;                  // Extended user profile data
-  signOut: () => Promise<void>;         // Sign out function
-  refreshProfile: () => Promise<void>;  // Refresh user profile data
+  user: User | null;
+  session: Session | null;
+  loading: boolean;
+  profile: any | null;
+  signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
-// Create authentication context
+/**
+ * Create Authentication Context
+ * 
+ * Creates a React Context for authentication. The context is undefined by
+ * default, which helps catch errors when useAuth() is used outside of
+ * AuthProvider.
+ */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Custom hook to access auth context - ensures it's used within provider
+/**
+ * useAuth Hook
+ * 
+ * Custom hook to access the authentication context. This hook:
+ * 1. Retrieves the context value
+ * 2. Validates that it's being used within AuthProvider
+ * 3. Returns the auth state and functions
+ * 
+ * If used outside AuthProvider, throws an error to help catch configuration issues.
+ */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -29,19 +72,76 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
-// Main authentication provider component
+/**
+ * Authentication Provider Component
+ * 
+ * Wraps the application and provides authentication state to all child components.
+ * This component:
+ * - Manages auth state (user, session, profile)
+ * - Synchronizes with Supabase Auth
+ * - Fetches extended profile data from backend
+ * - Handles auth state changes (login, logout, token refresh)
+ * 
+ * STATE MANAGEMENT:
+ * - user: Supabase Auth user object (from JWT token)
+ * - session: Supabase session (contains JWT tokens)
+ * - profile: Extended user data from backend (name, role, etc.)
+ * - loading: Indicates if auth state is being initialized
+ * 
+ * REFS FOR OPTIMIZATION:
+ * - isFetchingProfileRef: Prevents concurrent profile fetches
+ * - previousUserIdRef: Tracks which user's profile was fetched
+ * - profileFetchedRef: Prevents redundant profile fetches
+ * - profileFetchErrorCountRef: Tracks errors to prevent infinite retries
+ */
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // State management for authentication
-  const [user, setUser] = useState<User | null>(null);           // Current user
-  const [session, setSession] = useState<Session | null>(null); // Current session
-  const [profile, setProfile] = useState<any | null>(null);     // User profile data
-  const [loading, setLoading] = useState(true);                 // Loading state
-  const isFetchingProfileRef = useRef(false); // Prevent concurrent fetches using ref
-  const previousUserIdRef = useRef<string | null>(null); // Track previous user ID to prevent unnecessary fetches
-  const profileFetchedRef = useRef(false); // Track if profile was already fetched for current user
-  const profileFetchErrorCountRef = useRef(0); // Track consecutive errors to prevent infinite retries
+  /**
+   * Authentication State
+   * 
+   * These state variables hold the current authentication information:
+   * - user: The authenticated user from Supabase Auth
+   * - session: The session containing JWT tokens
+   * - profile: Extended profile data from backend (User table)
+   * - loading: True during initial auth check, false once complete
+   */
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  /**
+   * Refs for Performance Optimization
+   * 
+   * These refs prevent unnecessary API calls and race conditions:
+   * - isFetchingProfileRef: Prevents multiple simultaneous profile fetches
+   * - previousUserIdRef: Tracks which user's profile was last fetched
+   * - profileFetchedRef: Flags whether profile was already fetched for current user
+   * - profileFetchErrorCountRef: Tracks consecutive errors to prevent infinite retries
+   */
+  const isFetchingProfileRef = useRef(false);
+  const previousUserIdRef = useRef<string | null>(null);
+  const profileFetchedRef = useRef(false);
+  const profileFetchErrorCountRef = useRef(0);
 
-  // Fetch extended user profile from backend API
+  /**
+   * Refresh User Profile
+   * 
+   * Fetches extended user profile data from the backend API. This includes
+   * information not stored in Supabase Auth, such as:
+   * - Full name
+   * - Username
+   * - Contact number
+   * - Role (clerk, pharmacist, admin)
+   * - First login status
+   * 
+   * OPTIMIZATION FEATURES:
+   * - Prevents concurrent fetches (isFetchingProfileRef)
+   * - Skips fetch if already fetched for current user (previousUserIdRef)
+   * - Handles 401 errors gracefully (handled by API interceptor)
+   * 
+   * The useCallback hook ensures the function reference is stable, preventing
+   * unnecessary re-renders in components that depend on it.
+   */
   const refreshProfile = useCallback(async () => {
     if (!user) {
       setProfile(null);
@@ -49,32 +149,56 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    // Prevent concurrent profile fetches
+    /**
+     * Prevent Concurrent Fetches
+     * 
+     * If a profile fetch is already in progress, return early to prevent
+     * duplicate API calls. This is important because multiple components
+     * might call refreshProfile() simultaneously.
+     */
     if (isFetchingProfileRef.current) {
       return;
     }
 
-    // Prevent fetching if we already fetched for this user ID
+    /**
+     * Skip Redundant Fetches
+     * 
+     * If we've already fetched the profile for this user ID, skip the fetch
+     * to avoid unnecessary API calls. This is especially important during
+     * re-renders or when multiple components request profile data.
+     */
     if (previousUserIdRef.current === user.id && profileFetchedRef.current) {
       return;
     }
 
     isFetchingProfileRef.current = true;
     try {
+      /**
+       * Fetch Profile from Backend
+       * 
+       * The backend endpoint /auth/profile returns extended user information
+       * from the User table. This is separate from Supabase Auth user data
+       * because it includes business-specific fields like role and first login status.
+       */
       const response = await api.get('/auth/profile');
       if (response.data.success) {
         setProfile(response.data.data.user);
-        previousUserIdRef.current = user.id; // Mark as fetched for this user
-        profileFetchedRef.current = true; // Mark that we've fetched
+        previousUserIdRef.current = user.id;
+        profileFetchedRef.current = true;
       }
     } catch (error: any) {
-      // Don't log 401 errors as they're handled by the interceptor
+      /**
+       * Error Handling
+       * 
+       * 401 errors are handled by the API interceptor (auto-logout), so we
+       * don't need to handle them here. For other errors, we log them and
+       * clear the profile state.
+       */
       if (error.response?.status !== 401) {
-      console.error('Failed to fetch profile:', error);
+        console.error('Failed to fetch profile:', error);
       }
-      // Only clear profile if it's not a 401 (401 means unauthenticated, handled by interceptor)
       if (error.response?.status !== 401) {
-      setProfile(null);
+        setProfile(null);
         profileFetchedRef.current = false;
       }
     } finally {
@@ -82,13 +206,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user]);
 
-  // Sign out function - clears all auth state
+  /**
+   * Sign Out Function
+   * 
+   * Clears all authentication state and signs out from Supabase. This function:
+   * 1. Resets all refs to their initial state
+   * 2. Signs out from Supabase (clears session from localStorage)
+   * 3. Clears all state variables (user, session, profile)
+   * 
+   * After sign out, the user is redirected to the login page by the API
+   * interceptor if they try to access protected routes.
+   */
   const signOut = async () => {
     try {
-      isFetchingProfileRef.current = false; // Reset fetch flag
-      profileFetchedRef.current = false; // Reset fetched flag
-      previousUserIdRef.current = null; // Reset user ID ref
-      profileFetchErrorCountRef.current = 0; // Reset error count
+      isFetchingProfileRef.current = false;
+      profileFetchedRef.current = false;
+      previousUserIdRef.current = null;
+      profileFetchErrorCountRef.current = 0;
       await auth.signOut();
       setUser(null);
       setSession(null);

@@ -1,115 +1,129 @@
 /**
  * ============================================================================
- * API SERVICE - AXIOS CONFIGURATION
+ * API SERVICE - Axios HTTP Client Configuration
  * ============================================================================
  * 
- * This file configures Axios (HTTP client) for making API requests to the backend.
- * It sets up interceptors to automatically handle authentication tokens and errors.
+ * This file configures Axios for making HTTP requests to the backend API.
+ * It includes request and response interceptors that automatically handle
+ * authentication and error management, reducing boilerplate in components.
  * 
  * KEY FEATURES:
- * - Base URL configuration (points to backend server)
- * - Request interceptor: Automatically adds JWT token to all requests
- * - Response interceptor: Handles authentication errors (401) globally
- * - Timeout configuration for long-running queries
+ * - Automatic JWT token injection (request interceptor)
+ * - Global 401 error handling with auto-logout (response interceptor)
+ * - Configurable base URL (environment-based)
+ * - Request timeout protection
  * 
  * USAGE:
- * import api from './services/api';
- * const response = await api.get('/products');
- * const response = await api.post('/transactions', data);
+ *   import api from './services/api';
+ *   const response = await api.get('/products');
+ *   const response = await api.post('/transactions', data);
+ * 
+ * All requests automatically include the JWT token, and 401 errors trigger
+ * automatic logout and redirect to login page.
  */
 
 import axios from 'axios';
 import { supabase } from './supabase';
 
 /**
- * API BASE URL CONFIGURATION
+ * API Base URL Configuration
  * 
- * Uses environment variable VITE_API_URL if available (production)
- * Falls back to localhost for development
+ * Determines the backend API URL based on environment:
+ * - Production: Uses VITE_API_URL from environment variables
+ * - Development: Falls back to localhost (assumes backend runs on port 3000)
  * 
- * Environment variables in Vite must start with VITE_ to be accessible
- * Example: VITE_API_URL=https://backend.railway.app/api
+ * Vite requires environment variables to be prefixed with VITE_ to be accessible
+ * in the browser. These are embedded at build time.
+ * 
+ * Example production URL: https://backend.railway.app/api
  */
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 /**
- * CREATE AXIOS INSTANCE
+ * Axios Instance Configuration
  * 
- * This creates a configured Axios instance that will be used for all API calls.
+ * Creates a configured Axios instance with:
+ * - baseURL: All relative URLs are prefixed with this (e.g., '/products' becomes
+ *   'http://localhost:3000/api/products')
+ * - timeout: Requests fail after 20 seconds (prevents hanging on slow connections)
+ * - headers: Default Content-Type header for JSON requests
  * 
- * Configuration:
- * - baseURL: All requests will be prefixed with this URL
- * - timeout: Request will fail after 60 seconds (for large product queries)
- * - headers: Default headers sent with every request
+ * This instance is used for all API calls throughout the application, ensuring
+ * consistent configuration and allowing interceptors to work globally.
  */
 export const api = axios.create({
-  baseURL: API_URL,  // Base URL for all API requests
-  timeout: 20000,    // 20 second timeout (increased to handle slow database queries)
+  baseURL: API_URL,
+  timeout: 20000,
   headers: {
-    'Content-Type': 'application/json',  // Tell server we're sending JSON
+    'Content-Type': 'application/json',
   },
 });
 
 /**
  * ============================================================================
- * REQUEST INTERCEPTOR
+ * REQUEST INTERCEPTOR - Automatic Token Injection
  * ============================================================================
  * 
- * PURPOSE: Automatically add JWT authentication token to every API request
+ * Automatically adds JWT authentication token to every API request before it's
+ * sent to the backend. This eliminates the need to manually add tokens in every
+ * component, reducing code duplication and ensuring consistent authentication.
  * 
  * HOW IT WORKS:
- * 1. Intercepts every request BEFORE it's sent to the server
- * 2. Gets the current user's session from Supabase
- * 3. Extracts the access token (JWT)
- * 4. Adds token to Authorization header as "Bearer {token}"
- * 5. Sends request with authentication
+ * 1. Intercepts request before it leaves the browser
+ * 2. Retrieves current Supabase session (contains JWT token)
+ * 3. Extracts access_token from session
+ * 4. Adds "Authorization: Bearer {token}" header to request
+ * 5. Request proceeds to backend with authentication
  * 
- * BENEFIT: Don't need to manually add token to every API call
+ * PROTECTED ENDPOINT DETECTION:
+ * Some endpoints require authentication. If no token is available and the endpoint
+ * is protected, the request is rejected immediately rather than sending an
+ * unauthenticated request that will fail on the backend.
  * 
- * FLOW:
- * Frontend: api.get('/products')
- *   ↓
- * Interceptor: Gets token from Supabase session
- *   ↓
- * Interceptor: Adds "Authorization: Bearer {token}" header
- *   ↓
- * Backend: Receives request with token, validates it
+ * This prevents unnecessary network requests and provides faster error feedback.
  */
 api.interceptors.request.use(
   async (config) => {
     try {
       /**
-       * CHECK IF TOKEN ALREADY SET
+       * Check for Existing Authorization Header
        * 
-       * Some requests might explicitly set Authorization header
-       * If so, don't override it
+       * Some requests might explicitly set the Authorization header (e.g., OTP
+       * verification uses a temporary session token). If a header already exists,
+       * we don't override it, allowing for special cases.
        */
       if (config.headers.Authorization) {
-        return config;  // Use existing token
+        return config;
       }
 
       /**
-       * GET CURRENT USER SESSION
+       * Retrieve Current Session
        * 
-       * Supabase stores the user's session (including JWT token)
-       * This session is created when user logs in
+       * Gets the current Supabase session from localStorage. The session contains
+       * the JWT access token that the backend uses to identify and authenticate
+       * the user. If the user is not logged in, session will be null.
        */
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.access_token) {
         /**
-         * ADD TOKEN TO REQUEST HEADER
+         * Add JWT Token to Request Header
          * 
-         * Format: "Bearer {token}"
-         * Backend expects this format for JWT authentication
+         * The "Bearer" prefix is part of the HTTP authentication standard for
+         * token-based auth. The backend expects this format and extracts the token
+         * from the Authorization header to validate the user's identity.
          */
         config.headers.Authorization = `Bearer ${session.access_token}`;
       } else {
         /**
-         * NO TOKEN AVAILABLE
+         * No Token Available - Check if Endpoint Requires Auth
          * 
-         * Some endpoints don't require authentication (like login)
-         * Only reject if it's a protected endpoint
+         * Some endpoints are public (like /auth/register), while others require
+         * authentication. We check the URL to determine if this is a protected
+         * endpoint, and if so, reject the request immediately rather than sending
+         * an unauthenticated request that will fail on the backend.
+         * 
+         * This provides faster error feedback and reduces unnecessary network traffic.
          */
         const isProtectedEndpoint = config.url?.includes('/auth/profile') || 
                                    config.url?.includes('/auth/update') ||
@@ -117,13 +131,18 @@ api.interceptors.request.use(
                                    config.url?.includes('/auth/deactivate');
         
         if (isProtectedEndpoint) {
-          // Protected endpoint without token - reject request
           console.warn('No session available for protected endpoint:', config.url);
           return Promise.reject(new Error('No authentication session available'));
         }
       }
     } catch (error) {
-      // Error getting session - only reject for protected endpoints
+      /**
+       * Error Handling
+       * 
+       * If retrieving the session fails (e.g., localStorage is blocked), we only
+       * reject the request if it's a protected endpoint. Public endpoints can
+       * proceed without authentication.
+       */
       console.error('Error getting session:', error);
       const isProtectedEndpoint = config.url?.includes('/auth/profile') || 
                                  config.url?.includes('/auth/update') ||
@@ -134,58 +153,81 @@ api.interceptors.request.use(
         return Promise.reject(new Error('Failed to get authentication session'));
       }
     }
-    return config;  // Return config with token (or without if not needed)
+    return config;
   },
   (error) => {
-    // If interceptor itself fails, reject the request
+    /**
+     * Interceptor Error Handler
+     * 
+     * If the interceptor itself encounters an error (rare), we reject the request
+     * to prevent it from proceeding with invalid configuration.
+     */
     return Promise.reject(error);
   }
 );
 
 /**
  * ============================================================================
- * RESPONSE INTERCEPTOR
+ * RESPONSE INTERCEPTOR - Global Error Handling
  * ============================================================================
  * 
- * PURPOSE: Handle errors globally, especially authentication errors (401)
+ * Intercepts all API responses to handle errors globally, especially authentication
+ * errors (401 Unauthorized). This provides a consistent error handling strategy
+ * across the entire application without requiring error handling in every component.
  * 
- * HOW IT WORKS:
- * 1. Intercepts every response AFTER it comes back from server
- * 2. Checks response status code
- * 3. If 401 (Unauthorized): Token expired or invalid
- * 4. Automatically logs out user and redirects to login
+ * 401 ERROR HANDLING:
+ * When the backend returns 401, it means:
+ * - JWT token has expired (typically after 1 hour)
+ * - JWT token is invalid or malformed
+ * - User is not authenticated
  * 
- * BENEFIT: Don't need to handle 401 errors in every component
+ * The interceptor automatically:
+ * 1. Signs out the user (clears Supabase session)
+ * 2. Redirects to login page
+ * 3. Prevents the user from accessing protected content
  * 
- * FLOW:
- * Backend: Returns 401 (token expired)
- *   ↓
- * Interceptor: Detects 401 status
- *   ↓
- * Interceptor: Logs out user (clears session)
- *   ↓
- * Interceptor: Redirects to /login page
+ * EXCEPTIONS:
+ * Some endpoints legitimately return 401 and should not trigger auto-logout:
+ * - /auth/profile: May return 401 if user not logged in (component handles gracefully)
+ * - /auth/verify-pharmacist-admin: Returns 401 for invalid credentials (expected)
+ * - OTP endpoints: Return 401 for invalid OTP (component shows error message)
+ * 
+ * These endpoints are excluded from auto-logout to allow proper error handling
+ * in the components.
  */
 
-// Prevent multiple simultaneous redirects
+/**
+ * Redirect State Management
+ * 
+ * Prevents multiple simultaneous redirects that could occur if multiple API
+ * requests fail with 401 at the same time. The debounce timer ensures we
+ * only redirect once, even if multiple requests fail simultaneously.
+ */
 let isRedirecting = false;
-
-// Debounce timer to prevent rapid redirects
 let redirectTimeout: ReturnType<typeof setTimeout> | null = null;
 
 api.interceptors.response.use(
-  // Success handler: Just return the response as-is
+  /**
+   * Success Handler
+   * 
+   * For successful responses, simply return the response as-is. No processing
+   * needed - let the component handle the data.
+   */
   (response) => response,
   
-  // Error handler: Process errors
+  /**
+   * Error Handler
+   * 
+   * Processes all error responses, with special handling for 401 errors that
+   * indicate authentication failure.
+   */
   async (error) => {
     /**
-     * IDENTIFY ENDPOINTS THAT SHOULD NOT TRIGGER AUTO-REDIRECT
+     * Identify Endpoints That Should Not Trigger Auto-Logout
      * 
-     * Some endpoints return 401 for valid reasons:
-     * - /auth/profile: User might not be logged in (component handles this)
-     * - /auth/verify-pharmacist-admin: Invalid credentials (expected)
-     * - OTP endpoints: Invalid OTP (component handles this)
+     * These endpoints return 401 for legitimate reasons (invalid credentials,
+     * not logged in, etc.) and should be handled by the component, not trigger
+     * automatic logout. This allows for proper user feedback in these cases.
      */
     const isProfileEndpoint = error.config?.url?.includes('/auth/profile');
     const isVerificationEndpoint = error.config?.url?.includes('/auth/verify-pharmacist-admin');
@@ -194,14 +236,13 @@ api.interceptors.response.use(
     const isFirstLoginCheckEndpoint = error.config?.url?.includes('/auth/check-first-login');
     
     /**
-     * HANDLE 401 UNAUTHORIZED ERRORS
+     * Handle 401 Unauthorized Errors
      * 
-     * Status 401 means:
-     * - Token expired
-     * - Token invalid
-     * - User not authenticated
-     * 
-     * Action: Log out and redirect to login
+     * 401 status indicates authentication failure. We automatically log out
+     * the user and redirect to login, but only if:
+     * 1. Not already redirecting (prevent multiple redirects)
+     * 2. Not an excluded endpoint (component handles these)
+     * 3. Not already on login/reset-password page (prevent redirect loops)
      */
     if (error.response?.status === 401 && 
         !isRedirecting && 
@@ -211,41 +252,66 @@ api.interceptors.response.use(
         !isOTPSendEndpoint && 
         !isFirstLoginCheckEndpoint) {
       
-      // Only redirect if not already on login/reset-password page
       const currentPath = window.location.pathname;
       if (!currentPath.includes('/login') && !currentPath.includes('/reset-password')) {
-        // Clear any pending redirect (debounce)
+        /**
+         * Debounce Redirect
+         * 
+         * Clear any pending redirect and set a new one. The 500ms delay prevents
+         * rapid redirects if multiple requests fail simultaneously. This ensures
+         * a smooth user experience and prevents redirect loops.
+         */
         if (redirectTimeout) {
           clearTimeout(redirectTimeout);
         }
         
-        /**
-         * DEBOUNCE REDIRECT
-         * 
-         * Wait 500ms before redirecting
-         * Prevents multiple rapid redirects if multiple requests fail simultaneously
-         */
         redirectTimeout = setTimeout(async () => {
           if (!isRedirecting) {
             isRedirecting = true;
             try {
-              // Sign out user from Supabase (clears session)
-      await supabase.auth.signOut();
+              /**
+               * Sign Out User
+               * 
+               * Clears the Supabase session from localStorage, invalidating the
+               * JWT token. This ensures the user cannot make authenticated requests
+               * until they log in again.
+               */
+              await supabase.auth.signOut();
               
-              // Redirect to login page
-              // Use replace() instead of push() to prevent back button issues
+              /**
+               * Redirect to Login
+               * 
+               * Uses window.location.replace() instead of React Router's navigate()
+               * because:
+               * 1. We're in an interceptor, not a React component
+               * 2. replace() replaces the current history entry, preventing back
+               *    button from returning to the protected page
+               * 3. Forces a full page reload, clearing any component state
+               */
               window.location.replace('/login');
             } catch (err) {
+              /**
+               * Error During Sign Out
+               * 
+               * Even if sign out fails (e.g., localStorage blocked), we still
+               * redirect to login. The user will need to log in again anyway,
+               * and the redirect ensures they can't access protected content.
+               */
               console.error('Error during sign out:', err);
-              // Even if sign out fails, still redirect to login
               window.location.replace('/login');
             }
           }
-        }, 500); // 500ms debounce delay
+        }, 500);
       }
     }
     
-    // Reject the error so components can handle it if needed
+    /**
+     * Reject Error for Component Handling
+     * 
+     * Always reject the error so components can handle it if needed. This allows
+     * components to show specific error messages or perform custom error handling
+     * for non-401 errors (e.g., 400 validation errors, 500 server errors).
+     */
     return Promise.reject(error);
   }
 );

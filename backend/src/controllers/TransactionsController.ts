@@ -1,28 +1,81 @@
+/**
+ * ============================================================================
+ * TRANSACTIONS CONTROLLER
+ * ============================================================================
+ * 
+ * Handles all transaction-related business logic, including sale processing,
+ * financial calculations, and inventory updates. Transactions are the core
+ * business records that track sales and update inventory.
+ * 
+ * TRANSACTION PROCESSING:
+ * When a sale is processed, multiple operations must happen atomically:
+ * 1. Calculate financial totals (subtotal, discount, VAT, total)
+ * 2. Create Transaction record (main sale record)
+ * 3. Create Transaction_Item records (one per product)
+ * 4. Update Product_Item stock using FIFO (oldest items first)
+ * 
+ * If any step fails, the entire transaction should be rolled back to maintain
+ * data consistency (currently implemented with error handling, but could be
+ * enhanced with database transactions for true atomicity).
+ */
+
 import { supabase } from '../utils/database';
 import { Request, Response } from 'express';
 
-// Create a new transaction with items in the database
+/**
+ * Create Transaction (Process Sale)
+ * 
+ * This is the core function that processes a sale. It performs multiple critical
+ * operations to complete a transaction:
+ * 
+ * 1. USER MAPPING: Maps Supabase Auth user ID to database User ID
+ * 2. DISCOUNT CALCULATION: Determines discount percentage (20% for Senior/PWD)
+ * 3. PRODUCT FETCHING: Gets product details needed for calculations
+ * 4. FINANCIAL CALCULATIONS: Calculates subtotal, discount, VAT, and total per item
+ * 5. STOCK UPDATES: Reduces inventory using FIFO method
+ * 6. RECORD CREATION: Creates Transaction and Transaction_Item records
+ * 
+ * FINANCIAL RULES (Philippine Law):
+ * - Senior/PWD discount: 20% of base selling price (NOT on VAT)
+ * - VAT: 12% of base selling price (if not VAT exempt)
+ * - Discount is applied BEFORE VAT calculation
+ * - VAT exemption is determined by IsVATExemptYN column only
+ */
 export const createTransaction = async (req: Request, res: Response) => {
     try {
-        // Extract transaction data from request body
+        /**
+         * Extract Transaction Data from Request
+         * 
+         * The frontend sends complete transaction data including items, payment
+         * method, and discount information. We extract all necessary fields
+         * for processing.
+         */
         const {
-            referenceNo,        // Payment reference number (e.g., CASH-12345)
-            paymentMethod,      // Payment method (cash, gcash, maya)
-            subtotal,          // Subtotal before discounts
-            isSeniorPWDActive, // Senior/PWD discount flag
-            seniorPWDID,       // PWD ID or Senior Citizen ID
-            cashReceived,      // Cash amount received (for cash payments)
-            change,            // Change amount (for cash payments)
-            userId,            // User ID from frontend
-            items              // Array of transaction items
+            referenceNo,
+            paymentMethod,
+            subtotal,
+            isSeniorPWDActive,
+            seniorPWDID,
+            cashReceived,
+            change,
+            userId,
+            items
         } = req.body;
 
-        // Map Supabase auth user ID to database User ID
+        /**
+         * Map Supabase Auth User ID to Database User ID
+         * 
+         * The frontend sends the Supabase Auth user ID (from JWT token), but the
+         * Transaction table uses the User table's UserID (internal database ID).
+         * We need to look up the mapping between AuthUserID and UserID.
+         * 
+         * FALLBACK: If mapping fails, uses the first available user. This is a
+         * temporary solution - in production, the mapping should always succeed
+         * if the user is properly registered.
+         */
         let finalUserId = null;
         
         if (userId) {
-            // userId from frontend is the Supabase auth user ID
-            // We need to find the corresponding UserID in the User table
             const { data: userRecord, error: userError } = await supabase
                 .from('User')
                 .select('UserID')
@@ -38,7 +91,6 @@ export const createTransaction = async (req: Request, res: Response) => {
             }
         }
         
-        // Fallback: get first available user if mapping failed
         if (!finalUserId) {
             const { data: availableUsers, error: userError } = await supabase
                 .from('User')
@@ -61,19 +113,29 @@ export const createTransaction = async (req: Request, res: Response) => {
             throw new Error('No users found in database. Please create a user first.');
         }
 
-        // Map frontend payment methods to database enum values
-        // Based on the schema, the enum likely accepts: 'Cash', 'Gcash', 'Maya' (with capital letters)
+        /**
+         * Map Payment Method to Database Format
+         * 
+         * Frontend uses lowercase values ('cash', 'gcash', 'maya'), but the database
+         * enum likely uses capitalized values ('Cash', 'Gcash', 'Maya'). We normalize
+         * the value to match the database schema.
+         */
         const dbPaymentMethod = paymentMethod === 'cash' ? 'Cash' : 
                                paymentMethod === 'gcash' ? 'Gcash' : 
                                paymentMethod === 'maya' ? 'Maya' : 'Cash';
 
-        // Backend discount calculation - only apply if Senior/PWD is active
-        // Philippine law: Senior/PWD discount is applied to selling price only, not to (selling price + VAT)
-        let discountPercent = 0.2; // Default 20% (Philippine law)
+        /**
+         * Determine Discount Percentage
+         * 
+         * If Senior/PWD discount is active, fetches the discount configuration from
+         * the database. If not found, uses the default 20% as per Philippine law.
+         * The discount percentage is stored in the database to allow for future
+         * configuration changes without code updates.
+         */
+        let discountPercent = 0.2;
         let discountId = null;
 
         if (isSeniorPWDActive) {
-            // Fetch Senior Citizen Discount from database
             const { data: seniorDiscount, error: discountError } = await supabase
                 .from('Discount')
                 .select('DiscountID, Name, DiscountPercent, IsVATExemptYN')
@@ -81,17 +143,25 @@ export const createTransaction = async (req: Request, res: Response) => {
                 .single();
 
             if (discountError) {
-                // If discount not found, use default 20% discount (Philippine law)
                 discountPercent = 0.2;
                 discountId = null;
             } else {
-                // Use percentage from database (convert to decimal)
                 discountPercent = seniorDiscount.DiscountPercent / 100;
                 discountId = seniorDiscount.DiscountID;
             }
         }
 
-        // Fetch product details including SeniorPWDYN and IsVATExemptYN for all items
+        /**
+         * Fetch Product Details for Calculations
+         * 
+         * Retrieves SeniorPWDYN and IsVATExemptYN flags for all products in the
+         * transaction. These flags determine:
+         * - Whether the product is eligible for Senior/PWD discount
+         * - Whether the product is VAT exempt
+         * 
+         * This information is needed to calculate discounts and VAT correctly
+         * for each item in the transaction.
+         */
         const productIds = items.map((item: any) => item.productId);
         const { data: products, error: productsError } = await supabase
             .from('Product')
